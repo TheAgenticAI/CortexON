@@ -3,12 +3,33 @@ import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from core.server.routes.web import router as web_router
+from core.server.routes.vault import router as vault_router
 from core.server.constants import APP_NAME, APP_VERSION, IS_DEBUG, HOST, PORT, WORKERS, GLOBAL_PREFIX
 from fastapi.responses import JSONResponse
 from core.utils.logger import Logger
 import time
+from core.server.utils.vault_operations import vault_ops
+from contextlib import asynccontextmanager
 
 logger = Logger()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: create default namespace from environment variable
+    namespace = os.environ.get("VA_NAMESPACE")
+    if namespace:
+        try:
+            # Check if namespace already exists
+            existing_namespaces = await vault_ops.list_ns()
+            if f"{namespace}/" in existing_namespaces:
+                logger.info(f"Namespace {namespace} already exists, skipping creation")
+            else:
+                logger.info(f"Creating default namespace: {namespace}")
+                await vault_ops.setup_user(namespace)
+                logger.info(f"Default namespace created successfully: {namespace}")
+        except Exception as e:
+            logger.error(f"Failed to create default namespace: {str(e)}")
+    yield
 
 def get_app() -> FastAPI:
     """Initialize and configure FastAPI application"""
@@ -30,6 +51,7 @@ def get_app() -> FastAPI:
         openapi_tags=[
             {"name": "Web Automation", "description": "Web automation operations"}
         ],
+        lifespan=lifespan,
     )
 
     # Setup CORS middleware
@@ -43,6 +65,7 @@ def get_app() -> FastAPI:
 
     # Include only the web router
     fast_app.include_router(web_router, prefix=GLOBAL_PREFIX)
+    fast_app.include_router(vault_router, prefix=GLOBAL_PREFIX)
     
     print(f"DEBUG: Total app initialization took {time.time() - start_time:.2f} seconds")
 

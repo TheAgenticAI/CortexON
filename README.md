@@ -99,6 +99,11 @@ Follow the steps at [Google Custom Search API](https://developers.google.com/cus
 
 Create your token at [LogFire](https://pydantic.dev/logfire).
 
+#### Vault Integration
+- `VA_NAMESPACE=your_unique_namespace_id` (format unrestricted, UUID recommended)
+- `VA_TOKEN=your_vault_authentication_token`
+- `VA_URL=your_vault_service_endpoint`
+
 #### WebSocket
 - `VITE_WEBSOCKET_URL=ws://localhost:8081/ws`
 
