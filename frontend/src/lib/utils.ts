@@ -52,3 +52,15 @@ export const getTimeAgo = (dateString: string): string => {
     return `${years} ${years === 1 ? "year" : "years"} ago`;
   }
 };
+
+// Helper function to create a slug from website name
+export const createKeyFromWebsite = (website: string) => {
+  // Remove protocol and www if present
+  let key = website.replace(/^(https?:\/\/)?(www\.)?/, "");
+  // Remove domain extension
+  key = key.replace(/\.[a-z]{2,}$/, "");
+  // Convert to lowercase and replace non-alphanumeric with underscore
+  key = key.toLowerCase().replace(/[^a-z0-9]/g, "_");
+  // Add "_credentials" suffix
+  return `${key}_credentials`;
+};

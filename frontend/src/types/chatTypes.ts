@@ -4,8 +4,6 @@ export type ChatPageProps = {
 };
 
 export type ChatListPageProps = {
-  messages: Message[];
-  setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
   isLoading: boolean;
   setIsLoading: React.Dispatch<React.SetStateAction<boolean>>;
 };

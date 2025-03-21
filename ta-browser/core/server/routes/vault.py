@@ -8,21 +8,25 @@ from core.server.utils.vault_operations import vault_ops
 from core.server.utils.vault_exceptions import InternalError
 
 from core.utils.logger import Logger
+
 logger = Logger()
 
 router = APIRouter(prefix="/vault", tags=["Vault"])
 security = HTTPBearer()
 
+
 class SecretCreateRequest(BaseModel):
     namespace: str
     secrets: Dict[str, str]  # Accept multiple key/value pairs
 
+
 class NamespaceRequest(BaseModel):
     namespace: str = Field(..., description="Namespace for the vault operations")
 
+
 @router.get("/secrets")
 async def list_secrets(
-    namespace: str = Body(..., embed=True)
+    namespace: str = Query(..., description="Namespace for the vault operations")
 ):
     try:
         if namespace:
@@ -34,10 +38,11 @@ async def list_secrets(
         logger.error(f"Error listing secrets: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to list secrets: {str(e)}")
 
+
 @router.get("/secrets/{secret_key}")
 async def get_secret(
     secret_key: str,
-    namespace: str = Query(..., description="Namespace for the vault operations")
+    namespace: str = Query(..., description="Namespace for the vault operations"),
 ):
     """
     Retrieve a secret for a given secret_key from the user's namespace.
@@ -46,17 +51,17 @@ async def get_secret(
         if not namespace:
             return JSONResponse(
                 status_code=400,
-                content={"status": 400, "message": "Invalid namespace (vault_ns)"}
+                content={"status": 400, "message": "Invalid namespace (vault_ns)"},
             )
 
         logger.info(f"Getting secrets for : {namespace}")
         secret = await vault_ops.get_secret(namespace, secret_key)
         return {"status": 200, "message": secret}
-    
+
     except Exception as e:
         return JSONResponse(
             status_code=500,
-            content={"status": 500, "message": f"Failed to get secret: {str(e)}"}
+            content={"status": 500, "message": f"Failed to get secret: {str(e)}"},
         )
 
 
@@ -67,40 +72,36 @@ async def create_secret(
     """Create multiple secrets in user's namespace"""
     try:
         namespace = request.namespace
-        
+
         if not namespace:
             return JSONResponse(
-                status_code=400,
-                content={"status": 400, "message": "Invalid namespace"}
+                status_code=400, content={"status": 400, "message": "Invalid namespace"}
             )
 
         results = {}
         for key, value in request.secrets.items():
-            await vault_ops.set_secret(
-                ns=namespace,
-                secret_key=key,
-                secret_value=value
-            )
+            await vault_ops.set_secret(ns=namespace, secret_key=key, secret_value=value)
             results[key] = "created"
 
-        return {"status": 200, "message": {"status": "Secrets created", "details": results}}
-    
+        return {
+            "status": 200,
+            "message": {"status": "Secrets created", "details": results},
+        }
+
     except InternalError as e:
-        return JSONResponse(
-            status_code=500,
-            content={"status": 500, "message": str(e)}
-        )
+        return JSONResponse(status_code=500, content={"status": 500, "message": str(e)})
     except Exception as e:
         logger.error(f"Secret creation error: {str(e)}")
         return JSONResponse(
             status_code=500,
-            content={"status": 500, "message": "Failed to create secrets"}
+            content={"status": 500, "message": "Failed to create secrets"},
         )
+
 
 @router.delete("/secrets/{secret_key}")
 async def delete_secret(
     secret_key: str,
-    namespace: str = Query(..., description="Namespace for the vault operations")
+    namespace: str = Query(..., description="Namespace for the vault operations"),
 ):
     """Delete secret from user's namespace"""
     try:
@@ -109,13 +110,12 @@ async def delete_secret(
     except Exception as e:
         return JSONResponse(
             status_code=500,
-            content={"status": 500, "message": f"Failed to delete secret: {str(e)}"}
+            content={"status": 500, "message": f"Failed to delete secret: {str(e)}"},
         )
 
+
 @router.post("/namespaces/create")
-async def create_namespace(
-    request: NamespaceRequest
-):
+async def create_namespace(request: NamespaceRequest):
     """Setup namespace for new user"""
     try:
         namespace = request.namespace
@@ -126,7 +126,7 @@ async def create_namespace(
     except Exception as e:
         return JSONResponse(
             status_code=500,
-            content={"status": 500, "message": f"Failed to create namespace: {str(e)}"}
+            content={"status": 500, "message": f"Failed to create namespace: {str(e)}"},
         )
 
 

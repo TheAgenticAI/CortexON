@@ -1,13 +1,17 @@
 import {EXAMPLES} from "@/constants/Landing";
+import {setMessages} from "@/dataStore/messagesSlice";
 import {ChatListPageProps} from "@/types/chatTypes";
 import {Book, Send, TextSelect} from "lucide-react";
 import {useEffect, useRef, useState} from "react";
+import {useDispatch} from "react-redux";
 import favicon from "../../assets/Favicon-contexton.svg";
 import {Button} from "../ui/button";
 import {Card, CardDescription, CardHeader, CardTitle} from "../ui/card";
 import {Textarea} from "../ui/textarea";
 
-const Landing = ({setMessages, setIsLoading}: ChatListPageProps) => {
+const Landing = ({setIsLoading}: ChatListPageProps) => {
+  const dispatch = useDispatch();
+
   const [goal, setGoal] = useState<string>("");
   const [animateSubmit, setAnimateSubmit] = useState<boolean>(false);
   const [rows, setRows] = useState(4);
@@ -49,17 +53,19 @@ const Landing = ({setMessages, setIsLoading}: ChatListPageProps) => {
     setAnimateSubmit(true);
     setTimeout(() => setAnimateSubmit(false), 300);
 
-    setMessages([
-      {
-        role: "user",
-        prompt: goal,
-        sent_at: new Date().toISOString(),
-      },
-      {
-        role: "system",
-        data: [],
-      },
-    ]);
+    dispatch(
+      setMessages([
+        {
+          role: "user",
+          prompt: goal,
+          sent_at: new Date().toISOString(),
+        },
+        {
+          role: "system",
+          data: [],
+        },
+      ])
+    );
 
     setIsLoading(true);
     setGoal("");
