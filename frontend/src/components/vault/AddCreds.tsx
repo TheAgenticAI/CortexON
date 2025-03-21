@@ -6,18 +6,18 @@ import {
 } from "@/components/ui/dialog";
 import {createKeyFromWebsite} from "@/lib/utils";
 import {useAddSecretMutation} from "@/services/vaultApi";
-import {Eye, EyeOff, Plus} from "lucide-react";
+import {Plus} from "lucide-react";
 import {useState} from "react";
 import {Button} from "../ui/button";
 import {Input} from "../ui/input";
 import {Label} from "../ui/label";
+import {PasswordInput} from "../ui/passwordInput";
 const AddCreds = () => {
   const [open, setOpen] = useState(false);
 
   const [website, setWebsite] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
 
   const [addSecret, {isLoading}] = useAddSecretMutation();
 
@@ -80,25 +80,7 @@ const AddCreds = () => {
             </div>
             <div className="space-y-2 w-[50%]">
               <Label className="text-lg">Password</Label>
-              <div className="relative hover:cursor-pointer">
-                <Input
-                  type={showPassword ? "text" : "password"}
-                  placeholder="Enter your password for website."
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-                {showPassword ? (
-                  <Eye
-                    className="absolute right-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400"
-                    onClick={() => setShowPassword(!showPassword)}
-                  />
-                ) : (
-                  <EyeOff
-                    className="absolute right-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400"
-                    onClick={() => setShowPassword(!showPassword)}
-                  />
-                )}
-              </div>
+              <PasswordInput password={password} setPassword={setPassword} />
             </div>
           </div>
         </div>

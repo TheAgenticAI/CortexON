@@ -11,6 +11,7 @@ import {useState} from "react";
 import {Button} from "../ui/button";
 import {Input} from "../ui/input";
 import {Label} from "../ui/label";
+import {PasswordInput} from "../ui/passwordInput";
 import {DeleteAlert} from "./DeleteAlert";
 
 export const VaultList = ({secrets}: {secrets: TSecret[]}) => {
@@ -46,11 +47,9 @@ export const VaultList = ({secrets}: {secrets: TSecret[]}) => {
                 </div>
                 <div className="space-y-2 w-[50%]">
                   <Label>Password</Label>
-                  <Input
-                    type="password"
-                    placeholder="Enter your password for website."
-                    value={secret.password}
-                    readOnly
+                  <PasswordInput
+                    password={secret.password}
+                    setPassword={() => {}}
                   />
                 </div>
                 <DeleteAlert
