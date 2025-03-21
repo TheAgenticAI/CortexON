@@ -63,7 +63,7 @@ const AddCreds = () => {
             <Label className="text-lg">Website</Label>
             <Input
               type="text"
-              placeholder="xyz@abc.com"
+              placeholder="http://abc.com"
               value={website}
               onChange={(e) => setWebsite(e.target.value)}
             />

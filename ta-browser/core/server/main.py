@@ -25,7 +25,7 @@ logger = Logger()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: create default namespace from environment variable
-    namespace = os.environ.get("VA_NAMESPACE")
+    namespace = os.environ.get("VITE_APP_VA_NAMESPACE")
     if namespace:
         try:
             # Check if namespace already exists
