@@ -3,7 +3,7 @@ name: Bug report
 about: Create a report to help us improve
 title: ''
 labels: bug
-assignees: BhumilModi, Karbelekedar, AbhigyanBafna
+assignees: 
 
 ---
 
@@ -24,6 +24,7 @@ about: Report a reproducible bug or unexpected behavior
 
 ### Actual behavior:
 
-### Screenshots/Logs:
+### Screenshots/Logs [Mandatory]:
+Include screenshots and Logfire logs to help us identify and debug the issue.
 
 ### Environment (OS, Browser):
