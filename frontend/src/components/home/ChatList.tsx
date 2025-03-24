@@ -71,16 +71,20 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
           sendMessage(messages[0].prompt);
         }
       },
-      onError: () => {
+      onError: (error) => {
         setIsLoading(false);
-        console.log("Error connecting to webSocket.");
       },
-      onClose: () => {
+      onClose: (event) => {
         setIsLoading(false);
-        console.log("Websocket connection closed.");
+      },
+      onMessage: (event) => {
+        // Keep this for debugging critical issues
+        console.log("[WebSocket Debug] Received message:", event.data);
       },
       reconnectAttempts: 3,
       retryOnError: true,
+      shouldReconnect: (closeEvent) => true,
+      reconnectInterval: 3000,
     }
   );
 
@@ -116,125 +120,129 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
   useEffect(() => {
     if (!lastJsonMessage) return;
 
-    dispatch(
-      setMessages((prev: Message[]) => {
-        const lastMessage = prev[prev.length - 1];
-        if (lastMessage?.role === "system") {
-          setIsLoading(true);
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage?.role === "system") {
+      setIsLoading(true);
 
-          const lastMessageData = lastMessage.data || [];
-          const {
+      const lastMessageData = lastMessage.data || [];
+      const {
+        agent_name,
+        instructions,
+        steps,
+        output,
+        status_code,
+        live_url,
+      } = lastJsonMessage as SystemMessage;
+
+      // Update live URL if provided
+      if (live_url && liveUrl.length === 0) {
+        setCurrentOutput(null);
+        setTimeout(() => {
+          setLiveUrl(live_url);
+          setIsIframeLoading(true);
+          setAnimateIframeEntry(true);
+        }, 300);
+      } else if (agent_name !== "Web Surfer") {
+        setLiveUrl("");
+      }
+
+      // Find the agent name in the last message data and update the fields
+      const agentIndex = lastMessageData.findIndex(
+        (agent: SystemMessage) => agent.agent_name === agent_name
+      );
+
+      let updatedLastMessageData;
+      if (agentIndex !== -1) {
+        let filteredSteps = steps;
+        if (agent_name === "Web Surfer") {
+          const plannerStep = steps.find((step) => step.startsWith("Plan"));
+          filteredSteps = plannerStep
+            ? [
+                plannerStep,
+                ...steps.filter((step) => step.startsWith("Current")),
+              ]
+            : steps.filter((step) => step.startsWith("Current"));
+        }
+        updatedLastMessageData = [...lastMessageData];
+        updatedLastMessageData[agentIndex] = {
+          agent_name,
+          instructions,
+          steps: filteredSteps,
+          output,
+          status_code,
+          live_url,
+        };
+      } else {
+        updatedLastMessageData = [
+          ...lastMessageData,
+          {
             agent_name,
             instructions,
             steps,
             output,
             status_code,
             live_url,
-          } = lastJsonMessage as SystemMessage;
+          },
+        ];
+      }
 
-          // Update live URL if provided
-          if (live_url && liveUrl.length === 0) {
-            setCurrentOutput(null);
-            setTimeout(() => {
-              setLiveUrl(live_url);
-              setIsIframeLoading(true);
-              setAnimateIframeEntry(true);
-            }, 300);
-          } else if (agent_name !== "Web Surfer") {
-            setLiveUrl("");
-          }
-
-          // Find the agent name in the last message data and update the fields
-          const agentIndex = lastMessageData.findIndex(
-            (agent) => agent.agent_name === agent_name
-          );
-
-          if (agentIndex !== -1) {
-            let filteredSteps = steps;
-            if (agent_name === "Web Surfer") {
-              const plannerStep = steps.find((step) => step.startsWith("Plan"));
-              filteredSteps = plannerStep
-                ? [
-                    plannerStep,
-                    ...steps.filter((step) => step.startsWith("Current")),
-                  ]
-                : steps.filter((step) => step.startsWith("Current"));
-            }
-            lastMessageData[agentIndex] = {
-              agent_name,
-              instructions,
-              steps: filteredSteps,
-              output,
-              status_code,
-              live_url,
-            };
-          } else {
-            lastMessageData.push({
-              agent_name,
-              instructions,
-              steps,
-              output,
-              status_code,
-              live_url,
-            });
-          }
-
-          if (output && output.length > 0 && agent_name !== "Web Surfer") {
-            // Only mark as complete for Orchestrator
-            if (agent_name === "Orchestrator") {
-              setIsLoading(false);
-            }
-
-            if (status_code === 200) {
-              setOutputsList((prevList) => {
-                // Check if this agent already has an output
-                const existingIndex = prevList.findIndex(
-                  (item) => item.agent === agent_name
-                );
-
-                let newList;
-                let newOutputIndex; // Track the index of the new/updated output
-
-                if (existingIndex >= 0) {
-                  // Update existing output
-                  newList = [...prevList];
-                  newList[existingIndex] = {agent: agent_name, output};
-                  newOutputIndex = existingIndex;
-                } else {
-                  // Add new output
-                  newList = [...prevList, {agent: agent_name, output}];
-                  newOutputIndex = newList.length - 1;
-                }
-
-                // Always set the most recent output as current
-                // Use setTimeout to ensure state updates properly
-                setAnimateOutputEntry(false);
-
-                // After a short delay, change the output and trigger entry animation
-                setTimeout(() => {
-                  setCurrentOutput(newOutputIndex);
-                  setAnimateOutputEntry(true);
-                }, 300);
-
-                return newList;
-              });
-            }
-          }
-
-          // Create a new array to ensure state update
-          return [
-            ...prev.slice(0, prev.length - 1),
-            {
-              ...lastMessage,
-              data: [...lastMessageData],
-            },
-          ];
+      if (output && output.length > 0 && agent_name !== "Web Surfer") {
+        // Only mark as complete for Orchestrator
+        if (agent_name === "Orchestrator") {
+          setIsLoading(false);
         }
-        return [...prev];
-      })
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lastJsonMessage, messages.length, setIsLoading, setMessages]);
+
+        if (status_code === 200) {
+          setOutputsList((prevList) => {
+            // Check if this agent already has an output
+            const existingIndex = prevList.findIndex(
+              (item) => item.agent === agent_name
+            );
+
+            let newList;
+            let newOutputIndex; // Track the index of the new/updated output
+
+            if (existingIndex >= 0) {
+              // Update existing output
+              newList = [...prevList];
+              newList[existingIndex] = {agent: agent_name, output};
+              newOutputIndex = existingIndex;
+            } else {
+              // Add new output
+              newList = [...prevList, {agent: agent_name, output}];
+              newOutputIndex = newList.length - 1;
+            }
+
+            // Always set the most recent output as current
+            // Use setTimeout to ensure state updates properly
+            setAnimateOutputEntry(false);
+
+            // After a short delay, change the output and trigger entry animation
+            setTimeout(() => {
+              setCurrentOutput(newOutputIndex);
+              setAnimateOutputEntry(true);
+            }, 300);
+
+            return newList;
+          });
+        }
+      }
+
+      // Create a new array to ensure state update
+      const updatedMessages = [
+        ...messages.slice(0, messages.length - 1),
+        {
+          ...lastMessage,
+          data: updatedLastMessageData,
+        },
+      ];
+
+      // Only dispatch if the messages have actually changed
+      if (JSON.stringify(updatedMessages) !== JSON.stringify(messages)) {
+        dispatch(setMessages(updatedMessages));
+      }
+    }
+  }, [lastJsonMessage, messages, setIsLoading, dispatch, liveUrl]);
 
   const getOutputBlock = (type: string, output: string | undefined) => {
     if (!output) return null;

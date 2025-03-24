@@ -1,4 +1,5 @@
 
+import os
 from typing import Dict, Union
 from core.utils.logger import Logger
 from core.server.utils.vault_operations import vault_ops
@@ -6,7 +7,7 @@ from core.server.utils.vault_operations import vault_ops
 logger = Logger()
 
 
-async def get_keys(vault_ns) -> Dict[str, Union[str, int]]:
+async def get_keys() -> Dict[str, Union[str, int]]:
     """
     Returns all keys from Hashicorp's Vault along with metadata in a structured format.
 
@@ -24,13 +25,14 @@ async def get_keys(vault_ns) -> Dict[str, Union[str, int]]:
         }
     """
     try:
+        vault_ns = os.getenv("VITE_APP_VA_NAMESPACE")
         list = await vault_ops.list_secrets(vault_ns)
         return list
     except Exception as e:
         return f"Error: {e}"
         
 
-async def get_secret(vault_ns, key: str) -> str:
+async def get_secret(key: str) -> str:
     """
     Returns the secret value for a given key from Hashicorp's Vault.
 
@@ -42,7 +44,7 @@ async def get_secret(vault_ns, key: str) -> str:
     """
     if not isinstance(key, str) or not key.strip():
         return "Error: Invalid key provided"
-
+    vault_ns = os.getenv("VITE_APP_VA_NAMESPACE")
     try:
         secret = await vault_ops.get_secret(vault_ns, key)
         return secret

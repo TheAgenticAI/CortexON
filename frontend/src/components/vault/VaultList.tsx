@@ -27,7 +27,7 @@ export const VaultList = ({secrets}: {secrets: TSecret[]}) => {
         >
           <AccordionTrigger>
             <div className="flex flex-row items-center gap-3">
-              {secret.website.split("http://")[1]}
+              {secret.website}
               <p className="text-muted-foreground">
                 {secret.secrets.length} accounts
               </p>

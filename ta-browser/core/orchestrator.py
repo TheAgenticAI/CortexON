@@ -396,19 +396,19 @@ class Orchestrator:
                 """Presses the specified key combination in the browser."""
                 return await press_key_combination(bc=ctx.deps.pm, key_combination=keys)
             
-            @BA_agent.tool
-            async def get_keys_tool(ctx:RunContext[BA_Deps]) -> str:
+            @BA_agent.tool_plain
+            async def get_keys_tool() -> str:
                 """
                 Retrieves the keys available in the HashiCorp vault.
                 """
-                return await get_keys(ctx.deps.vault_ns)
+                return await get_keys()
 
-            @BA_agent.tool
-            async def get_secret_tool(ctx:RunContext[BA_Deps], key: str) -> str:
+            @BA_agent.tool_plain
+            async def get_secret_tool(key: str) -> str:
                 """
                 Retrieves the secret value for the specified key from the HashiCorp vault.
                 """
-                return await get_secret(vault_ns = ctx.deps.vault_ns, key=key)
+                return await get_secret(key=key)
             
             self.browser_agent = BA_agent
 
