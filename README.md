@@ -107,6 +107,8 @@ Create your token at [LogFire](https://pydantic.dev/logfire).
 - `VA_TTL=24h`
 - `VA_TOKEN_REFRESH_SECONDS=43200`
 
+This project uses HashiCorp Cloud Platform (HCP) Vault for secure secrets management. While you can either self-host Vault or use HCP Vault, we recommend using HCP Vault for the best managed experience. For HCP Vault Dedicated cluster setup, follow the [official HashiCorp documentation](https://developer.hashicorp.com/vault/tutorials/get-started-hcp-vault-dedicated/create-cluster).
+
 #### WebSocket
 - `VITE_WEBSOCKET_URL=ws://localhost:8081/ws`
 
