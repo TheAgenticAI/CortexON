@@ -100,6 +100,7 @@ Follow the steps at [Google Custom Search API](https://developers.google.com/cus
 Create your token at [LogFire](https://pydantic.dev/logfire).
 
 #### Vault Integration(OPTIONAL)
+- `VITE_APP_API_BASE_URL=http://localhost:8000`
 - `VITE_APP_VA_NAMESPACE=your_unique_namespace_id` (format unrestricted, UUID recommended)
 - `VA_TOKEN=your_vault_authentication_token`
 - `VA_URL=your_vault_service_endpoint`
