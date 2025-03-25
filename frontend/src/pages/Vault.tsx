@@ -156,6 +156,9 @@ export const Vault = () => {
         <p className="text-muted-foreground">
           Add, save and manage your passwords.
         </p>
+        <p className="text-yellow-500 text-sm">
+          ⚠️ Vault is an experimental feature. We're working to make it more secure.
+        </p>
       </div>
       <div className="flex justify-between items-center gap-4 pr-3">
         <div className="relative w-full">
