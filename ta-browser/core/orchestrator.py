@@ -533,6 +533,7 @@ class Orchestrator:
             return
         if hasattr(self, "notification_queue") and self.notification_queue:
             sanitized_message = self.sanitize_message(message)
+            logger.info(f"Sanitized message: {sanitized_message}")
             notification_data = {
                 "message": sanitized_message, 
                 "type": message_type.value,
@@ -650,6 +651,7 @@ class Orchestrator:
                                     logger.info(f"Initial plan : {plan}")
                                     logger.info(f"Current step : {c_step}")
                                     await self.notify_client(f"Plan Generated: {plan}", MessageType.INFO)
+                                    logger.info("Before notify client of current step")
                                     await self.notify_client(f"Current Step: {c_step}", MessageType.INFO)
 
                                     try:
@@ -1021,7 +1023,7 @@ class Orchestrator:
             self._cleanup_in_progress = False
             self.terminate = True
 
-    def sanitize_message(message: str) -> str:
+    def sanitize_message(self, message: str) -> str:
         """Sanitize message to remove sensitive information."""
         sensitive_patterns = [
             # Patterns for '=' and ':' separators
