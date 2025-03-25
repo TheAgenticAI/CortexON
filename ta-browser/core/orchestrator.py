@@ -532,8 +532,9 @@ class Orchestrator:
         if self.input_mode == "GUI_ONLY":
             return
         if hasattr(self, "notification_queue") and self.notification_queue:
+            sanitized_message = self.sanitize_message(message)
             notification_data = {
-                "message": message, 
+                "message": sanitized_message, 
                 "type": message_type.value,
                 "step_count": self.iteration_counter  # Include iteration counter
             }
@@ -1019,3 +1020,38 @@ class Orchestrator:
         finally:
             self._cleanup_in_progress = False
             self.terminate = True
+
+    def sanitize_message(message: str) -> str:
+        """Sanitize message to remove sensitive information."""
+        sensitive_patterns = [
+            # Patterns for '=' and ':' separators
+            r'(password[=:]\s*)([^\s]+)',
+            r'(username[=:]\s*)([^\s]+)',
+            r'(credential[=:]\s*)([^\s]+)',
+            r'(api_key[=:]\s*)([^\s]+)',
+            r'(token[=:]\s*)([^\s]+)',
+            r'(password\[)([^\]]+)(\])',
+            r'(username\[)([^\]]+)(\])',
+            r'(credential\[)([^\]]+)(\])',
+            r'(api_key\[)([^\]]+)(\])',
+            r'(token\[)([^\]]+)(\])',
+            r'(secret[=:]\s*)([^\s]+)',
+            r'(key[=:]\s*)([^\s]+)',
+            r'(private_key[=:]\s*)([^\s]+)',
+            r'(public_key[=:]\s*)([^\s]+)',
+            r'(phone[=:]\s*)([^\s]+)',
+            r'(phone_number[=:]\s*)([^\s]+)',
+            r'(ssn[=:]\s*)([^\s]+)',
+            r'(credit_card[=:]\s*)([^\s]+)',
+            r'(card_number[=:]\s*)([^\s]+)',
+        ]
+        
+        sanitized = message
+        for pattern in sensitive_patterns:
+            # For square bracket patterns, preserve the brackets
+            if r'\[' in pattern:
+                sanitized = re.sub(pattern, r'\1*****\3', sanitized, flags=re.IGNORECASE)
+            else:
+                sanitized = re.sub(pattern, r'\1*****', sanitized, flags=re.IGNORECASE)
+        
+        return sanitized
