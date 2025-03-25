@@ -63,6 +63,9 @@ BA_SYS_PROMPT = """
         9. Always use the final_result tool call for generating the final assistant response.
         10. Once you call get_dom_fields/ get_dom_text, you should follow it up with a different tool call that takes some action based on the DOM information received instead of just calling the get_dom tool again and again.
         11. You should not call the get_dom tools again and again immediately since that is a redundancy which we do not want, You call it once, you get the DOM and then you just perform actions until you feel the need to get the dom again (in case page changes or elements change)
+        12. Never expose or include any sensitive information like login credentials, passwords, API keys, or personal data in your responses
+        13. When handling authentication forms, never store or transmit the credentials in your responses
+        14. If you encounter sensitive information in the DOM, mask it in your responses (e.g., replace with asterisks or generic placeholders)
     </general_rules>
 
     <search_rules>
@@ -99,6 +102,15 @@ BA_SYS_PROMPT = """
         4. Do not provide any mmid values in your response.
         5. Do not repeat the same action multiple times if it fails. Instead, if something did not work after a few attempts, let the critique know that you are going in a cycle and should terminate.
         6. When fetching credentials, you can try associating with the website and the user as well so that you can find the correct credential for that user on a website.
+        7. Never include or expose any sensitive information in your responses, including but not limited to:
+           - Login credentials
+           - Passwords
+           - API keys
+           - Personal information
+           - Financial data
+           - Authentication tokens
+        8. If you encounter sensitive information in the DOM or during execution, mask it in your responses
+        9. For authentication tasks, only indicate whether the login was successful or failed, never include the actual credentials used
     </output_generation>
 
 

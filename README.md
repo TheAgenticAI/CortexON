@@ -99,6 +99,16 @@ Follow the steps at [Google Custom Search API](https://developers.google.com/cus
 
 Create your token at [LogFire](https://pydantic.dev/logfire).
 
+#### Vault Integration(OPTIONAL)
+- `VITE_APP_API_BASE_URL=http://localhost:8000`
+- `VITE_APP_VA_NAMESPACE=your_unique_namespace_id` (format unrestricted, UUID recommended)
+- `VA_TOKEN=your_vault_authentication_token`
+- `VA_URL=your_vault_service_endpoint`
+- `VA_TTL=24h`
+- `VA_TOKEN_REFRESH_SECONDS=43200`
+
+This project uses HashiCorp Cloud Platform (HCP) Vault for secure secrets management. While you can either self-host Vault or use HCP Vault, we recommend using HCP Vault for the best managed experience. For HCP Vault Dedicated cluster setup, follow the [official HashiCorp documentation](https://developer.hashicorp.com/vault/tutorials/get-started-hcp-vault-dedicated/create-cluster).
+
 #### WebSocket
 - `VITE_WEBSOCKET_URL=ws://localhost:8081/ws`
 

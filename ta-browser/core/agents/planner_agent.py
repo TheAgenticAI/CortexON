@@ -46,6 +46,9 @@ PA_SYS_PROMPT = """
     <rule>Don't assume webpage capabilities</rule>
     <rule>Maintain plan consistency during execution</rule>
     <rule>Never use the final_result tool for the response, always follow the JSON format provided</rule>
+    <rule>Never include or pass any sensitive information like login credentials, passwords, API keys, or personal data in responses or plans</rule>
+    <rule>If a task requires authentication, instruct the browser agent to prompt the user for credentials rather than including them in the plan</rule>
+    <rule>Treat any user-provided credentials as sensitive and never store or transmit them in responses</rule>
 </critical_rules>
 
 <execution_modes>

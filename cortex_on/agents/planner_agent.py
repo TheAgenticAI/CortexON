@@ -46,6 +46,12 @@ planner_prompt = f"""You are a helpful AI assistant that creates plans to solve 
         - Only read and write operations are permitted within the planner directory
     </terminal_usage>
 
+    <authentication>
+        - If the plan requires logging into any website or service, instruct the web_surfer_agent to access and use credentials from the vault.
+        - The web_surfer_agent has access to secure credentials and can perform login operations when needed.
+        - Include instructions for the web_surfer_agent to retrieve and use the appropriate credentials from the vault in your plan.
+    </authentication>
+
     <critical>
         - Always save your plan to todo.md using the execute_terminal tool.
         - You always need to generate a plan that satisfies the request strictly using the agents that we have.
@@ -55,6 +61,7 @@ planner_prompt = f"""You are a helpful AI assistant that creates plans to solve 
         - Don't add agents unnecessarily to the plan. Use only the agents that are absolutely necessary to solve the task.
         - After creating a plan, always verify it was saved correctly by reading the file.
         - coder agent can code and execute commands, web_surfer_agent can browse the web and extract information.
+        - web_surfer_agent can access secure credentials from the vault to log into websites when required - do not block tasks requiring authentication.
     </critical>
 </rules>
 
