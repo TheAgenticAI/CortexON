@@ -34,6 +34,41 @@ orchestrator_system_prompt = """You are an AI orchestrator that manages a team o
    - Implements technical solutions
    - Executes code operations
 
+[AVAILABLE TOOLS]
+1. plan_task(task: str) -> str:
+   - Plans the given task and assigns it to appropriate agents
+   - Creates a detailed plan with steps and agent assignments
+   - Returns the plan text and updates the UI with planning progress
+
+2. coder_task(task: str) -> str:
+   - Assigns coding tasks to the coder agent
+   - Handles code implementation and execution
+   - Returns the generated code or execution results
+   - Updates UI with coding progress and results
+
+3. web_surfer_task(task: str) -> str:
+   - Assigns web surfing tasks to the web surfer agent
+   - Handles web browsing, information extraction, and interactions
+   - Returns the web search results or action outcomes
+   - Updates UI with web surfing progress and results
+
+4. ask_human(question: str) -> str:
+   - Primary tool for human interaction and conversation
+   - Can be used for:
+     * Getting user preferences and decisions
+     * Asking clarifying questions
+     * Requesting feedback on results
+     * Having back-and-forth conversations
+     * Getting user input for complex tasks
+     * Confirming actions before execution
+     * Gathering requirements and specifications
+   - Supports natural conversation flow
+   - Each call creates a new interaction point
+   - Can be used multiple times in sequence for extended conversations
+   - Updates UI with both questions and responses
+   - Waits for user response before proceeding
+   - Returns the user's response for further processing
+
 [MANDATORY WORKFLOW]
 1. On receiving task:
    IF task involves login/credentials/authentication:
@@ -65,13 +100,44 @@ orchestrator_system_prompt = """You are an AI orchestrator that manages a team o
    - Suggest manual alternatives
    - Block credential access
 
-Basic worflow:
+Basic workflow:
 1. Receive a task from the user.
-2. Plan the task by calling the planner agent through plan task
-3. Assign coding tasks to the coder agent through coder task if plan requeires coding
-or Assign web surfing tasks to the web surfer agent through web_surfer_task if plan requires web surfing
-4. Continue step 3 if required by the plan
-5. Return the final result to the user
+2. Plan the task by calling the planner agent through plan_task
+3. Assign coding tasks to the coder agent through coder_task if plan requires coding
+   or Assign web surfing tasks to the web surfer agent through web_surfer_task if plan requires web surfing
+4. Use ask_human when you need user input or decisions
+5. Continue step 3 if required by the plan
+6. Return the final result to the user
+
+[TOOL USAGE GUIDELINES]
+1. plan_task:
+   - Use for initial task analysis and planning
+   - Always call this first for new tasks
+   - Include clear steps and agent assignments
+
+2. coder_task:
+   - Use for any code-related operations
+   - Provide clear, specific coding instructions
+   - Handle code execution and results
+
+3. web_surfer_task:
+   - Use for web browsing and interaction tasks
+   - Handle authentication and credential tasks
+   - Extract and process web information
+
+4. ask_human:
+   - Use for any form of human interaction or conversation
+   - Ask clear, focused questions
+   - Support natural conversation flow
+   - Can be used for:
+     * Getting preferences and decisions
+     * Asking clarifying questions
+     * Requesting feedback
+     * Confirming actions
+     * Gathering requirements
+   - Wait for and process user responses
+   - Use for decisions that require human judgment
+   - Can be used multiple times for extended conversations
 """
 
 model = AnthropicModel(
@@ -254,6 +320,53 @@ async def web_surfer_task(ctx: RunContext[orchestrator_deps], task: str) -> str:
         web_surfer_stream_output.status_code = 500
         await _safe_websocket_send(ctx.deps.websocket, web_surfer_stream_output)
         return f"Failed to assign web surfing task: {error_msg}"
+
+@orchestrator_agent.tool
+async def ask_human(ctx: RunContext[orchestrator_deps], question: str) -> str:
+    """Sends a question to the frontend and waits for human input"""
+    try:
+        logfire.info(f"Asking human: {question}")
+        
+        # Create a new StreamResponse for Human Input
+        human_stream_output = StreamResponse(
+            agent_name="Human Input",
+            instructions=question,
+            steps=[],
+            output="",
+            status_code=0
+        )
+
+        # Add to orchestrator's response collection if available
+        if ctx.deps.agent_responses is not None:
+            ctx.deps.agent_responses.append(human_stream_output)
+
+        # Send the question to frontend
+        await _safe_websocket_send(ctx.deps.websocket, human_stream_output)
+        
+        # Update stream with waiting message
+        human_stream_output.steps.append("Waiting for human input...")
+        await _safe_websocket_send(ctx.deps.websocket, human_stream_output)
+        
+        # Wait for response from frontend
+        response = await ctx.deps.websocket.receive_text()
+        
+        # Update stream with response
+        human_stream_output.steps.append("Received human input")
+        human_stream_output.output = response
+        human_stream_output.status_code = 200
+        await _safe_websocket_send(ctx.deps.websocket, human_stream_output)
+        
+        return response
+    except Exception as e:
+        error_msg = f"Error getting human input: {str(e)}"
+        logfire.error(error_msg, exc_info=True)
+        
+        # Update stream with error
+        human_stream_output.steps.append(f"Failed to get human input: {str(e)}")
+        human_stream_output.status_code = 500
+        await _safe_websocket_send(ctx.deps.websocket, human_stream_output)
+        
+        return f"Failed to get human input: {error_msg}"
 
 # Helper function for sending WebSocket messages
 async def _safe_websocket_send(websocket: Optional[WebSocket], message: Any) -> bool:

@@ -42,20 +42,18 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
   const [isIframeLoading, setIsIframeLoading] = useState<boolean>(true);
   const [liveUrl, setLiveUrl] = useState<string>("");
   const [animateIframeEntry, setAnimateIframeEntry] = useState<boolean>(false);
-  // Modify your outputs state to use a map structure for better tracking
   const [outputsList, setOutputsList] = useState<AgentOutput[]>([]);
   const [currentOutput, setCurrentOutput] = useState<number | null>(null);
-  // Add animation state for output panel
   const [animateOutputEntry, setAnimateOutputEntry] = useState<boolean>(false);
+  const [humanInputRequest, setHumanInputRequest] = useState<{question: string, agentName: string} | null>(null);
+  const [humanInputValue, setHumanInputValue] = useState<string>("");
 
-  // Create a ref for the scroll container
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const messages = useSelector(
     (state: RootState) => state.messagesState.messages
   );
   const dispatch = useDispatch();
 
-  // Create another ref to track the previous messages length
   const prevMessagesLengthRef = useRef(0);
   const prevSystemMessageLengthRef = useRef(0);
 
@@ -63,23 +61,36 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
     VITE_WEBSOCKET_URL,
     {
       onOpen: () => {
-        if (
-          messages.length > 0 &&
-          messages[0]?.prompt &&
-          messages[0].prompt.length > 0
-        ) {
+        if (messages.length > 0 && messages[0]?.prompt) {
           sendMessage(messages[0].prompt);
         }
       },
       onError: (error) => {
         setIsLoading(false);
+        setHumanInputRequest(null);
       },
       onClose: (event) => {
         setIsLoading(false);
+        setHumanInputRequest(null);
       },
       onMessage: (event) => {
-        // Keep this for debugging critical issues
         console.log("[WebSocket Debug] Received message:", event.data);
+        try {
+          const data = JSON.parse(event.data);
+          if (data.agent_name === "Human Input") {
+            if (data.status_code === 200) {
+              setHumanInputRequest(null);
+            } else {
+              setHumanInputRequest({
+                question: data.instructions,
+                agentName: data.agent_name
+              });
+            }
+          }
+        } catch (e) {
+          console.error("Error parsing WebSocket message:", e);
+          setHumanInputRequest(null);
+        }
       },
       reconnectAttempts: 3,
       retryOnError: true,
@@ -90,24 +101,20 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
 
   const scrollToBottom = (smooth = true) => {
     if (scrollAreaRef.current) {
-      // Get the actual scrollable div inside the ScrollArea component
       const scrollableDiv = scrollAreaRef.current.querySelector(
         "[data-radix-scroll-area-viewport]"
       );
       if (scrollableDiv) {
-        // Find the last message element to scroll to
         const lastMessageElement = scrollAreaRef.current.querySelector(
           ".space-y-4 > div:last-child"
         );
 
         if (lastMessageElement) {
-          // Use scrollIntoView for smooth scrolling behavior
           lastMessageElement.scrollIntoView({
             behavior: smooth ? "smooth" : "auto",
             block: "end",
           });
         } else {
-          // Fallback to traditional scrollTop if element not found
           scrollableDiv.scrollTo({
             top: scrollableDiv.scrollHeight,
             behavior: smooth ? "smooth" : "auto",
@@ -134,7 +141,6 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
         live_url,
       } = lastJsonMessage as SystemMessage;
 
-      // Update live URL if provided
       if (live_url && liveUrl.length === 0) {
         setCurrentOutput(null);
         setTimeout(() => {
@@ -146,10 +152,9 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
         setLiveUrl("");
       }
 
-      // Find the agent name in the last message data and update the fields
       const agentIndex = lastMessageData.findIndex(
         (agent: SystemMessage) => agent.agent_name === agent_name
-      );
+      );  
 
       let updatedLastMessageData;
       if (agentIndex !== -1) {
@@ -187,37 +192,30 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
       }
 
       if (output && output.length > 0 && agent_name !== "Web Surfer") {
-        // Only mark as complete for Orchestrator
         if (agent_name === "Orchestrator") {
           setIsLoading(false);
         }
 
         if (status_code === 200) {
           setOutputsList((prevList) => {
-            // Check if this agent already has an output
             const existingIndex = prevList.findIndex(
               (item) => item.agent === agent_name
             );
 
             let newList;
-            let newOutputIndex; // Track the index of the new/updated output
+            let newOutputIndex;
 
             if (existingIndex >= 0) {
-              // Update existing output
               newList = [...prevList];
               newList[existingIndex] = {agent: agent_name, output};
               newOutputIndex = existingIndex;
             } else {
-              // Add new output
               newList = [...prevList, {agent: agent_name, output}];
               newOutputIndex = newList.length - 1;
             }
 
-            // Always set the most recent output as current
-            // Use setTimeout to ensure state updates properly
             setAnimateOutputEntry(false);
 
-            // After a short delay, change the output and trigger entry animation
             setTimeout(() => {
               setCurrentOutput(newOutputIndex);
               setAnimateOutputEntry(true);
@@ -228,7 +226,6 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
         }
       }
 
-      // Create a new array to ensure state update
       const updatedMessages = [
         ...messages.slice(0, messages.length - 1),
         {
@@ -237,7 +234,6 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
         },
       ];
 
-      // Only dispatch if the messages have actually changed
       if (JSON.stringify(updatedMessages) !== JSON.stringify(messages)) {
         dispatch(setMessages(updatedMessages));
       }
@@ -419,30 +415,23 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
     }
   };
 
-  // Function to handle output selection with animation
   const handleOutputSelection = (index: number) => {
-    // If we're already showing this output, don't do anything
     if (currentOutput === index) return;
 
-    // If we're switching from one output to another, animate the transition
     if (currentOutput !== null) {
-      // Set animation flag to false first (to trigger exit animation)
       setAnimateOutputEntry(false);
 
-      // After a short delay, change the output and trigger entry animation
       setTimeout(() => {
         setCurrentOutput(index);
         setAnimateOutputEntry(true);
-      }, 300); // Match this with CSS transition duration
+      }, 300);
     } else {
-      // If we're showing an output for the first time
       setCurrentOutput(index);
       setAnimateOutputEntry(true);
     }
   };
 
   useEffect(() => {
-    // Only scroll if messages have been added
     const currentMessagesLength = messages.length;
     let shouldScroll = false;
 
@@ -452,7 +441,6 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
       currentMessagesLength > 0 &&
       messages[currentMessagesLength - 1].role === "system"
     ) {
-      // Check if system message data has changed
       const systemMessage = messages[currentMessagesLength - 1];
       const currentSystemDataLength = systemMessage.data?.length || 0;
 
@@ -460,25 +448,19 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
         shouldScroll = true;
       }
 
-      // Update system message data length ref
       prevSystemMessageLengthRef.current = currentSystemDataLength;
     }
 
-    // Update messages length ref
     prevMessagesLengthRef.current = currentMessagesLength;
 
-    // Scroll with a slight delay to ensure content has rendered
     if (shouldScroll) {
       setTimeout(scrollToBottom, 100);
     }
   }, [messages]);
 
-  // Additional useEffect to handle scrolling on initial load
   useEffect(() => {
-    // Initial scroll without smooth behavior for immediate positioning
     scrollToBottom(false);
 
-    // Add window resize listener to maintain scroll position
     const handleResize = () => {
       scrollToBottom(false);
     };
@@ -490,14 +472,12 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
     };
   }, []);
 
-  // Reset iframe animation flag when iframe is hidden
   useEffect(() => {
     if (!liveUrl) {
       setAnimateIframeEntry(false);
     }
   }, [liveUrl]);
 
-  // Reset output animation flag when output is hidden
   useEffect(() => {
     if (currentOutput === null) {
       setAnimateOutputEntry(false);
@@ -507,25 +487,30 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
   window.addEventListener("message", function (event) {
     if (event.data === "browserbase-disconnected") {
       console.log("Message received from iframe:", event.data);
-      // Handle the disconnection logic here
       setLiveUrl("");
     }
   });
 
-  // Calculate width based on whether liveUrl or output is present
   const chatContainerWidth = liveUrl || currentOutput !== null ? "50%" : "65%";
 
-  // Calculate animation classes for output panel
   const outputPanelClasses = `border-2 rounded-xl w-[50%] flex flex-col h-[95%] justify-between items-center transition-all duration-700 ease-in-out ${
     animateOutputEntry
       ? "opacity-100 translate-x-0 animate-fade-in animate-once animate-duration-1000"
       : "opacity-0 translate-x-2"
   }`;
 
+  const handleHumanInputSubmit = () => {
+    if (humanInputRequest && humanInputValue.trim()) {
+      sendMessage(humanInputValue);
+      setHumanInputValue("");
+      setHumanInputRequest(null);
+    }
+  };
+
   return (
     <div className="w-full h-full flex justify-center items-center px-4 gap-4">
       <div
-        className="h-full flex flex-col items-center space-y-10 pt-8 transition-all duration-500 ease-in-out"
+        className="h-full flex flex-col items-center space-y-4 pt-8 transition-all duration-500 ease-in-out relative"
         style={{width: chatContainerWidth}}
       >
         <ScrollArea className="h-[95%] w-full" ref={scrollAreaRef}>
@@ -695,7 +680,6 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
                             </Card>
                           )
                         )}
-                        {/* Add output of the orchestrator */}
                         {message.data &&
                           message.data.find(
                             (systemMessage) =>
@@ -751,6 +735,46 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
             })}
           </div>
         </ScrollArea>
+        
+        {/* Human Input Card */}
+        {humanInputRequest && (
+          <div className="fixed bottom-24 left-0 right-0 flex justify-center items-center z-50">
+            <div className="w-[700px] ml-16">
+              <Card className="bg-background/95 backdrop-blur-sm border shadow-lg">
+                <div className="p-4 space-y-3">
+                  <div className="flex items-center gap-2 text-secondary-foreground">
+                    <Component size={20} className="text-primary" />
+                    <span className="font-medium">Human Input</span>
+                  </div>
+                  <div className="text-secondary-foreground text-base">
+                    {humanInputRequest.question}
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={humanInputValue}
+                      onChange={(e) => setHumanInputValue(e.target.value)}
+                      className="flex-1 px-3 py-2 bg-secondary/80 text-foreground rounded-md border border-primary/20 focus:border-primary focus:ring-1 focus:ring-primary outline-none text-base"
+                      placeholder="Type your response..."
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          handleHumanInputSubmit();
+                        }
+                      }}
+                    />
+                    <Button 
+                      onClick={handleHumanInputSubmit}
+                      className="bg-primary hover:bg-primary/90 text-primary-foreground px-6"
+                      size="default"
+                    >
+                      Send
+                    </Button>
+                  </div>
+                </div>
+              </Card>
+            </div>
+          </div>
+        )}
       </div>
       {liveUrl && (
         <div
@@ -780,7 +804,7 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
               title="Browser Preview"
               sandbox="allow-scripts allow-same-origin allow-modals allow-forms allow-popups"
               onLoad={() => {
-                setTimeout(() => setIsIframeLoading(false), 300); // Delay to show transition
+                setTimeout(() => setIsIframeLoading(false), 300);
               }}
               onError={(e) => {
                 console.error("Iframe load error:", e);
@@ -794,7 +818,6 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
             />
           </div>
           <div className="bg-secondary h-[7vh] flex w-full rounded-b-xl justify-end px-4 animate-fade-up animate-once animate-duration-700">
-            {/* Browser session footer */}
           </div>
         </div>
       )}
