@@ -4,6 +4,7 @@ import {
   ChevronRight,
   Component,
   Globe,
+  Send,
   SquareCode,
   SquareSlash,
   X,
@@ -20,16 +21,12 @@ import {Skeleton} from "../ui/skeleton";
 import {setMessages} from "@/dataStore/messagesSlice";
 import {RootState} from "@/dataStore/store";
 import {getTimeAgo} from "@/lib/utils";
-import {
-  AgentOutput,
-  ChatListPageProps,
-  Message,
-  SystemMessage,
-} from "@/types/chatTypes";
+import {AgentOutput, ChatListPageProps, SystemMessage} from "@/types/chatTypes";
 import {useDispatch, useSelector} from "react-redux";
 import useWebSocket, {ReadyState} from "react-use-websocket";
 import {Button} from "../ui/button";
 import {Card} from "../ui/card";
+import {Textarea} from "../ui/textarea";
 import {CodeBlock} from "./CodeBlock";
 import {ErrorAlert} from "./ErrorAlert";
 import LoadingView from "./Loading";
@@ -45,8 +42,12 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
   const [outputsList, setOutputsList] = useState<AgentOutput[]>([]);
   const [currentOutput, setCurrentOutput] = useState<number | null>(null);
   const [animateOutputEntry, setAnimateOutputEntry] = useState<boolean>(false);
-  const [humanInputRequest, setHumanInputRequest] = useState<{question: string, agentName: string} | null>(null);
+  const [rows, setRows] = useState(4);
+  const [animateSubmit, setAnimateSubmit] = useState<boolean>(false);
+
   const [humanInputValue, setHumanInputValue] = useState<string>("");
+
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const messages = useSelector(
@@ -57,6 +58,24 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
   const prevMessagesLengthRef = useRef(0);
   const prevSystemMessageLengthRef = useRef(0);
 
+  const adjustHeight = () => {
+    if (!textareaRef.current) return;
+
+    // Reset to minimum height
+    textareaRef.current.style.height = "auto";
+
+    // Get the scroll height
+    const scrollHeight = textareaRef.current.scrollHeight;
+
+    // Calculate how many rows that would be (approx 24px per row)
+    const calculatedRows = Math.ceil(scrollHeight / 24);
+
+    // Limit to between 4 and 12 rows
+    const newRows = Math.max(4, Math.min(12, calculatedRows));
+
+    setRows(newRows);
+  };
+
   const {sendMessage, lastJsonMessage, readyState} = useWebSocket(
     VITE_WEBSOCKET_URL,
     {
@@ -65,36 +84,15 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
           sendMessage(messages[0].prompt);
         }
       },
-      onError: (error) => {
+      onError: () => {
         setIsLoading(false);
-        setHumanInputRequest(null);
       },
-      onClose: (event) => {
+      onClose: () => {
         setIsLoading(false);
-        setHumanInputRequest(null);
-      },
-      onMessage: (event) => {
-        console.log("[WebSocket Debug] Received message:", event.data);
-        try {
-          const data = JSON.parse(event.data);
-          if (data.agent_name === "Human Input") {
-            if (data.status_code === 200) {
-              setHumanInputRequest(null);
-            } else {
-              setHumanInputRequest({
-                question: data.instructions,
-                agentName: data.agent_name
-              });
-            }
-          }
-        } catch (e) {
-          console.error("Error parsing WebSocket message:", e);
-          setHumanInputRequest(null);
-        }
       },
       reconnectAttempts: 3,
       retryOnError: true,
-      shouldReconnect: (closeEvent) => true,
+      shouldReconnect: () => true,
       reconnectInterval: 3000,
     }
   );
@@ -132,14 +130,10 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
       setIsLoading(true);
 
       const lastMessageData = lastMessage.data || [];
-      const {
-        agent_name,
-        instructions,
-        steps,
-        output,
-        status_code,
-        live_url,
-      } = lastJsonMessage as SystemMessage;
+      const {agent_name, instructions, steps, output, status_code, live_url} =
+        lastJsonMessage as SystemMessage;
+
+      console.log(lastJsonMessage);
 
       if (live_url && liveUrl.length === 0) {
         setCurrentOutput(null);
@@ -154,7 +148,7 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
 
       const agentIndex = lastMessageData.findIndex(
         (agent: SystemMessage) => agent.agent_name === agent_name
-      );  
+      );
 
       let updatedLastMessageData;
       if (agentIndex !== -1) {
@@ -191,7 +185,12 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
         ];
       }
 
-      if (output && output.length > 0 && agent_name !== "Web Surfer") {
+      if (
+        output &&
+        output.length > 0 &&
+        agent_name !== "Web Surfer" &&
+        agent_name !== "Human Input"
+      ) {
         if (agent_name === "Orchestrator") {
           setIsLoading(false);
         }
@@ -224,6 +223,17 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
             return newList;
           });
         }
+      }
+
+      if (agent_name === "Human Input") {
+        if (output && output.length > 0) {
+          setIsLoading(true);
+        } else {
+          setIsLoading(false);
+        }
+        setTimeout(() => {
+          setCurrentOutput(null);
+        }, 300);
       }
 
       const updatedMessages = [
@@ -500,10 +510,11 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
   }`;
 
   const handleHumanInputSubmit = () => {
-    if (humanInputRequest && humanInputValue.trim()) {
+    if (humanInputValue.trim()) {
       sendMessage(humanInputValue);
       setHumanInputValue("");
-      setHumanInputRequest(null);
+      setAnimateSubmit(true);
+      setIsLoading(true);
     }
   };
 
@@ -595,6 +606,167 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
                                   ))}
                               </div>
                             </div>
+                          ) : systemMessage.agent_name === "Human Input" ? (
+                            <div
+                              className="space-y-5 bg-background mb-4 w-full animate-fade-in animate-once animate-delay-300"
+                              key={index}
+                            >
+                              <div className="transform transition-transform duration-300 hover:scale-105 animate-fade-right animate-once animate-duration-500">
+                                <div className="markdown-container text-base leading-7 break-words p-2">
+                                  <Markdown
+                                    remarkPlugins={[remarkBreaks]}
+                                    rehypePlugins={[rehypeRaw]}
+                                    components={{
+                                      code({className, children, ...props}) {
+                                        return (
+                                          <pre className="code-block">
+                                            <code
+                                              className={className}
+                                              {...props}
+                                            >
+                                              {children}
+                                            </code>
+                                          </pre>
+                                        );
+                                      },
+                                      h1: ({children}) => (
+                                        <h1 className="text-2xl font-bold mt-6 mb-4">
+                                          {children}
+                                        </h1>
+                                      ),
+                                      h2: ({children}) => (
+                                        <h2 className="text-xl font-bold mt-5 mb-3">
+                                          {children}
+                                        </h2>
+                                      ),
+                                      h3: ({children}) => (
+                                        <h3 className="text-lg font-bold mt-4 mb-2">
+                                          {children}
+                                        </h3>
+                                      ),
+                                      h4: ({children}) => (
+                                        <h4 className="text-base font-bold mt-3 mb-2">
+                                          {children}
+                                        </h4>
+                                      ),
+                                      h5: ({children}) => (
+                                        <h5 className="text-sm font-bold mt-3 mb-1">
+                                          {children}
+                                        </h5>
+                                      ),
+                                      h6: ({children}) => (
+                                        <h6 className="text-xs font-bold mt-3 mb-1">
+                                          {children}
+                                        </h6>
+                                      ),
+                                      p: ({children}) => (
+                                        <p className="mb-4">{children}</p>
+                                      ),
+                                      a: ({href, children}) => (
+                                        <a
+                                          href={href}
+                                          className="text-primary hover:underline"
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                        >
+                                          {children}
+                                        </a>
+                                      ),
+                                      ul: ({children}) => (
+                                        <ul className="list-disc pl-6 mb-4">
+                                          {children}
+                                        </ul>
+                                      ),
+                                      ol: ({children}) => (
+                                        <ol className="list-decimal pl-6 mb-4">
+                                          {children}
+                                        </ol>
+                                      ),
+                                      li: ({children}) => (
+                                        <li className="mb-2">{children}</li>
+                                      ),
+                                    }}
+                                  >
+                                    {systemMessage.instructions}
+                                  </Markdown>
+                                </div>
+                              </div>
+                              {systemMessage.output &&
+                              systemMessage.output.length > 0 ? (
+                                <div className="flex flex-col justify-end items-end space-y-1 animate-fade-in animate-once animate-duration-300 animate-ease-in-out">
+                                  <div
+                                    className="bg-secondary text-secondary-foreground text-right rounded-lg p-3 break-words 
+                    max-w-[80%] min-w-[10%] transform transition-all duration-300 hover:shadow-md hover:-translate-y-1 animate-fade-right animate-once animate-duration-500"
+                                  >
+                                    {systemMessage.output}
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="relative w-[100%] transition-all duration-300 hover:scale-[1.01] focus-within:scale-[1.01]">
+                                  <Textarea
+                                    ref={textareaRef}
+                                    draggable={false}
+                                    placeholder="Please enter your input here..."
+                                    rows={rows}
+                                    value={humanInputValue}
+                                    onChange={(e) => {
+                                      setHumanInputValue(e.target.value);
+                                      adjustHeight();
+                                    }}
+                                    className={`w-full max-h-[20vh] focus:shadow-lg resize-none pb-5 transition-all duration-300 ${
+                                      humanInputValue
+                                        ? "border-primary border-2"
+                                        : "border"
+                                    }`}
+                                    style={{
+                                      overflowY: rows >= 12 ? "auto" : "hidden",
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter") {
+                                        if (e.shiftKey) {
+                                          // Shift+Enter - insert a new line
+                                          setHumanInputValue(
+                                            (prev) => prev + "\n"
+                                          );
+                                        } else {
+                                          // Just Enter - submit the form
+                                          e.preventDefault(); // Prevent default newline behavior
+                                          if (humanInputValue.length > 0) {
+                                            handleHumanInputSubmit();
+                                          }
+                                        }
+                                      }
+                                    }}
+                                  />
+                                  {humanInputValue.trim().length > 0 && (
+                                    <Button
+                                      size="icon"
+                                      className={`absolute right-2 top-2 transition-all duration-300 ${
+                                        animateSubmit
+                                          ? "scale-90"
+                                          : "hover:scale-110"
+                                      }`}
+                                      onClick={handleHumanInputSubmit}
+                                    >
+                                      <Send
+                                        size={20}
+                                        absoluteStrokeWidth
+                                        className={`transition-all duration-300 ${
+                                          animateSubmit
+                                            ? "animate-ping animate-once"
+                                            : ""
+                                        }`}
+                                      />
+                                    </Button>
+                                  )}
+                                  {humanInputValue.trim().length > 0 && (
+                                    <p className="text-[13px] text-muted-foreground absolute right-3 bottom-3 pointer-events-none animate-fade-in animate-duration-300">
+                                      press shift + enter to go to new line
+                                    </p>
+                                  )}
+                                </div>
+                              )}
+                            </div>
                           ) : (
                             <Card
                               key={index}
@@ -647,7 +819,8 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
                                   )}
                                 {systemMessage.output &&
                                   systemMessage.output.length > 0 &&
-                                  (systemMessage.agent_name !== "Web Surfer" ? (
+                                  (systemMessage.agent_name !== "Web Surfer" &&
+                                  systemMessage.agent_name !== "Human Input" ? (
                                     <div
                                       onClick={() =>
                                         handleOutputSelection(
@@ -735,9 +908,9 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
             })}
           </div>
         </ScrollArea>
-        
+
         {/* Human Input Card */}
-        {humanInputRequest && (
+        {/* {humanInputRequest && (
           <div className="fixed bottom-24 left-0 right-0 flex justify-center items-center z-50">
             <div className="w-[700px] ml-16">
               <Card className="bg-background/95 backdrop-blur-sm border shadow-lg">
@@ -757,12 +930,12 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
                       className="flex-1 px-3 py-2 bg-secondary/80 text-foreground rounded-md border border-primary/20 focus:border-primary focus:ring-1 focus:ring-primary outline-none text-base"
                       placeholder="Type your response..."
                       onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
+                        if (e.key === "Enter") {
                           handleHumanInputSubmit();
                         }
                       }}
                     />
-                    <Button 
+                    <Button
                       onClick={handleHumanInputSubmit}
                       className="bg-primary hover:bg-primary/90 text-primary-foreground px-6"
                       size="default"
@@ -774,7 +947,7 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
               </Card>
             </div>
           </div>
-        )}
+        )} */}
       </div>
       {liveUrl && (
         <div
@@ -817,8 +990,7 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
               }}
             />
           </div>
-          <div className="bg-secondary h-[7vh] flex w-full rounded-b-xl justify-end px-4 animate-fade-up animate-once animate-duration-700">
-          </div>
+          <div className="bg-secondary h-[7vh] flex w-full rounded-b-xl justify-end px-4 animate-fade-up animate-once animate-duration-700"></div>
         </div>
       )}
       {outputsList.length > 0 && currentOutput !== null && (
