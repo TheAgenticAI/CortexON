@@ -748,15 +748,7 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
                                       }`}
                                       onClick={handleHumanInputSubmit}
                                     >
-                                      <Send
-                                        size={20}
-                                        absoluteStrokeWidth
-                                        className={`transition-all duration-300 ${
-                                          animateSubmit
-                                            ? "animate-ping animate-once"
-                                            : ""
-                                        }`}
-                                      />
+                                      <Send size={20} absoluteStrokeWidth />
                                     </Button>
                                   )}
                                   {humanInputValue.trim().length > 0 && (
