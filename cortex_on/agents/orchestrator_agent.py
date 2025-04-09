@@ -15,6 +15,7 @@ from utils.stream_response_format import StreamResponse
 from agents.planner_agent import planner_agent
 from agents.code_agent import coder_agent, CoderAgentDeps
 from utils.ant_client import get_client
+from utils.client_initializer import initialize_client
 
 @dataclass
 class orchestrator_deps:
@@ -74,10 +75,8 @@ or Assign web surfing tasks to the web surfer agent through web_surfer_task if p
 5. Return the final result to the user
 """
 
-model = AnthropicModel(
-    model_name=os.environ.get("ANTHROPIC_MODEL_NAME"),
-    anthropic_client=get_client()
-)
+# Initialize the model
+model, provider = initialize_client()
 
 orchestrator_agent = Agent(
     model=model,
