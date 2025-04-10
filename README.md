@@ -80,6 +80,10 @@ Create a `.env` file with the following required variables:
 - `ANTHROPIC_MODEL_NAME=claude-3-7-sonnet-20250219`
 - `ANTHROPIC_API_KEY=your_anthropic_api_key`
 
+#### Openai API
+- `OPENAI_MODEL_NAME=<your model name>`
+- `OPENAI_API_KEY=your_openai_api_key`
+
 Obtain your API key from [Anthropic Console](https://console.anthropic.com).
 
 #### Browserbase Configuration
