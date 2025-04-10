@@ -10,8 +10,8 @@ from pydantic_ai import Agent
 from pydantic_ai.models.anthropic import AnthropicModel
 
 # Local application imports
-from utils.ant_client import get_client
-
+from utils.ant_client import get_agentic_client, get_client
+from pydantic_ai.models.openai import OpenAIModel
 
 
 load_dotenv()
@@ -133,8 +133,13 @@ model = AnthropicModel(
     anthropic_client=get_client()
 )
 
+model_openai = OpenAIModel(
+    model_name='agentic-turbo',
+    openai_client=get_agentic_client()
+)
+
 planner_agent = Agent(
-    model=model,
+    model=model_openai,
     name="Planner Agent",
     result_type=PlannerResult,
     system_prompt=planner_prompt 

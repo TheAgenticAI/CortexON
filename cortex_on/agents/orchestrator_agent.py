@@ -9,12 +9,14 @@ import logfire
 from fastapi import WebSocket
 from dotenv import load_dotenv
 from pydantic_ai.models.anthropic import AnthropicModel
+from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai import Agent, RunContext
+from pydantic_ai.usage import UsageLimits, Usage
 from agents.web_surfer import WebSurfer
 from utils.stream_response_format import StreamResponse
 from agents.planner_agent import planner_agent
 from agents.code_agent import coder_agent, CoderAgentDeps
-from utils.ant_client import get_client
+from utils.ant_client import get_agentic_client, get_client
 
 @dataclass
 class orchestrator_deps:
@@ -145,8 +147,13 @@ model = AnthropicModel(
     anthropic_client=get_client()
 )
 
+model_openai = OpenAIModel(
+    model_name='agentic-turbo',
+    openai_client=get_agentic_client()
+)
+
 orchestrator_agent = Agent(
-    model=model,
+    model=model_openai,
     name="Orchestrator Agent",
     system_prompt=orchestrator_system_prompt,
     deps_type=orchestrator_deps
@@ -177,8 +184,14 @@ async def plan_task(ctx: RunContext[orchestrator_deps], task: str) -> str:
         planner_stream_output.steps.append("Planning task...")
         await _safe_websocket_send(ctx.deps.websocket, planner_stream_output)
         
-        # Run planner agent
-        planner_response = await planner_agent.run(user_prompt=task)
+        # Set a higher request limit for the agent
+        custom_usage_limits = UsageLimits(request_limit=500)
+        
+        # Run planner agent with increased limits
+        planner_response = await planner_agent.run(
+            user_prompt=task,
+            usage_limits=custom_usage_limits
+        )
         
         # Update planner stream with results
         plan_text = planner_response.data.plan
@@ -237,10 +250,14 @@ async def coder_task(ctx: RunContext[orchestrator_deps], task: str) -> str:
             stream_output=coder_stream_output
         )
 
-        # Run coder agent
+        # Set a higher request limit for the agent
+        custom_usage_limits = UsageLimits(request_limit=500)
+
+        # Run coder agent with increased limits
         coder_response = await coder_agent.run(
             user_prompt=task,
-            deps=deps_for_coder_agent
+            deps=deps_for_coder_agent,
+            usage_limits=custom_usage_limits
         )
 
         # Extract response data

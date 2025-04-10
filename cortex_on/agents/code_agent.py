@@ -13,9 +13,10 @@ from fastapi import WebSocket
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.anthropic import AnthropicModel
+from pydantic_ai.models.openai import OpenAIModel
 
 # Local application imports
-from utils.ant_client import get_client
+from utils.ant_client import get_agentic_client, get_client
 from utils.stream_response_format import StreamResponse
 
 load_dotenv()
@@ -242,9 +243,13 @@ model = AnthropicModel(
     anthropic_client=get_client()
 )
 
+model_openai = OpenAIModel(
+    model_name='agentic-turbo',
+    openai_client=get_agentic_client()
+)
 # Initialize the agent
 coder_agent = Agent(
-    model=model,
+    model=model_openai,
     name="Coder Agent",
     result_type=CoderResult,
     deps_type=CoderAgentDeps,

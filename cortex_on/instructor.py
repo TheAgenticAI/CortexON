@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from pydantic_ai import Agent
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.anthropic import AnthropicModel
+from pydantic_ai.usage import UsageLimits
 
 # Local application imports
 from agents.code_agent import coder_agent
@@ -24,7 +25,6 @@ from utils.ant_client import get_client
 from utils.stream_response_format import StreamResponse
 
 load_dotenv()
-
 
 
 
@@ -89,9 +89,13 @@ class SystemInstructor:
             stream_output.steps.append("Agents initialized successfully")
             await self._safe_websocket_send(stream_output)
 
+            # Create custom usage limits with higher request limit (500 instead of the default 50)
+            custom_usage_limits = UsageLimits(request_limit=500)
+
             orchestrator_response = await orchestrator_agent.run(
                 user_prompt=task,
-                deps=deps_for_orchestrator
+                deps=deps_for_orchestrator,
+                usage_limits=custom_usage_limits
             )
             stream_output.output = orchestrator_response.data
             stream_output.status_code = 200

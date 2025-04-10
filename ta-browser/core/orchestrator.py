@@ -333,7 +333,7 @@ class Orchestrator:
                 system_prompt=BA_SYS_PROMPT,
                 deps_type=BA_Deps,
                 name="Browser Agent",
-                retries=3,
+                retries=10,
                 model_settings=ModelSettings(temperature=0.5),
             )
             logger.info("Browser Agent initialized successfully.")
