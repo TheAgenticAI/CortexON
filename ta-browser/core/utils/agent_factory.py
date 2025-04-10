@@ -23,6 +23,8 @@ def get_text_model_instance():
         return AnthropicModel(model_name=model_name, anthropic_client=client)
         # pass
     else:
-        
-        client = get_openai_client()
-        return OpenAIModel(model_name=model_name, openai_client=client)
+        try:
+            client = get_openai_client()
+            return OpenAIModel(model_name=model_name, openai_client=client)
+        except Exception as e:
+            raise ValueError(f"Error initializing OpenAI client: {e}")
