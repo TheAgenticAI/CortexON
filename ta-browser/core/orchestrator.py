@@ -323,7 +323,9 @@ class Orchestrator:
                 name="Explainer Agent",
                 retries=2,
                 model_settings=ModelSettings(temperature=0.2),
-                result_type=ExplainerOutput
+                result_type=ExplainerOutput,
+                result_tool_name="output_format",
+                result_tool_description="This is the tool that you need to use everytime you want to answer the user query, You need to strictly output a JSON object within a string. It is very crucial that the output is a string and not a JSON object at all!!!"
             )
             logger.info("Explainer Agent initialized successfully.")
 
@@ -335,6 +337,8 @@ class Orchestrator:
                 name="Browser Agent",
                 retries=10,
                 model_settings=ModelSettings(temperature=0.5),
+                result_tool_name="output_format",
+                result_tool_description="This is the tool that you need to use everytime you want to answer the user query in text format or string format." 
             )
             logger.info("Browser Agent initialized successfully.")
 
@@ -421,8 +425,8 @@ class Orchestrator:
                     retries=3,
                     model_settings=ModelSettings(temperature=0.5),
                     result_type=CritiqueOutput,
-                    result_tool_name='final_response',
-                    result_tool_description='Synthesizes web automation results into a comprehensive final answer addressing the clients original query.'
+                    result_tool_name="output_format",
+                    result_tool_description="This is the tool that you need to use everytime you want to answer the user query"
                 )
                 logger.info("Critique Agent initialized successfully.")
 
@@ -434,7 +438,9 @@ class Orchestrator:
                     name="Planner Agent",
                     retries=3,
                     model_settings=ModelSettings(temperature=0.5),
-                    result_type=NCPA_OP
+                    result_type=NCPA_OP,
+                    result_tool_name="output_format",
+                    result_tool_description="This is the tool that you need to use everytime you want to answer the user query"
                 )
                 logger.info("No-critique Planner Agent initialized successfully.")
             else:
@@ -444,7 +450,9 @@ class Orchestrator:
                     name="Planner Agent",
                     retries=3,
                     model_settings=ModelSettings(temperature=0.5),
-                    result_type=PLANNER_AGENT_OP
+                    result_type=PLANNER_AGENT_OP,
+                    result_tool_name="output_format",
+                    result_tool_description="This is the tool that you need to use everytime you want to answer the user query"
                 )
                 logger.info("Planner Agent initialized successfully.")
             

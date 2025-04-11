@@ -10,4 +10,6 @@ COPY . .
 
 EXPOSE 3000
 
+RUN npm install react-redux
+
 CMD [ "npm", "run", "dev" ]

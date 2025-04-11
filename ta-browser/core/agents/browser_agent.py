@@ -54,6 +54,7 @@ BA_SYS_PROMPT = """
         
     <general_rules>
         1. You will always perform tool calls
+        2. If you want to output text, always use the output_format tool. This is super critical.
         3. Use DOM representations for element location or text summarization.
         4. Interact with pages using only the "mmid" attribute in DOM elements.
         5. You must extract mmid value from the fetched DOM, do not conjure it up.
@@ -111,6 +112,7 @@ BA_SYS_PROMPT = """
            - Authentication tokens
         8. If you encounter sensitive information in the DOM or during execution, mask it in your responses
         9. For authentication tasks, only indicate whether the login was successful or failed, never include the actual credentials used
+        10. Whenever you feel like you want to output text, you need to ALWAYS strictly use the output_format tool.
     </output_generation>
 
 
@@ -246,6 +248,12 @@ BA_SYS_PROMPT = """
               same goes for other selectors like class, id and other ones, also when a previous selector didnt work move on and try with different selectors
             - wait_before_execution: Optional wait time in seconds before executing the click event logic (default is 0.0).
         </parameters>
+
+        11.
+        output_format(text: str) -> str:
+        <description>
+            Used to output text responses whenever necessary.
+        </description>
 
     """
 
