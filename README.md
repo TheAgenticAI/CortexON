@@ -111,14 +111,6 @@ Create your token at [LogFire](https://pydantic.dev/logfire).
 - `VA_TTL=24h`
 - `VA_TOKEN_REFRESH_SECONDS=43200`
 
-#### Model_name
-In .env file you have to enter your preferred model 
-write which model you want to use 
-- `AGENTIC_BROWSER_TEXT_MODEL=<"your_model_name">`
-
-#### FORCE DIRECT MODEL NAME
-if you don't want to toggle between models, just want to predifined model name
-- `FORCE_DIRECT_MODEL=<openai>` #anthropic if you want to use anthropic model
 
 This project uses HashiCorp Cloud Platform (HCP) Vault for secure secrets management. While you can either self-host Vault or use HCP Vault, we recommend using HCP Vault for the best managed experience. For HCP Vault Dedicated cluster setup, follow the [official HashiCorp documentation](https://developer.hashicorp.com/vault/tutorials/get-started-hcp-vault-dedicated/create-cluster).
 

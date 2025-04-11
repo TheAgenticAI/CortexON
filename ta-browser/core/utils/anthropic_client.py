@@ -16,7 +16,7 @@ def get_env_var(key: str) -> str:
 class AnthropicConfig:
     @staticmethod
     def get_text_config() -> Dict:
-        model = get_env_var("AGENTIC_BROWSER_TEXT_MODEL")    # previously: ANTHROPIC_MODEL_NAME
+        model =  "claude-3-5-sonnet-20241022"    # previously: ANTHROPIC_MODEL_NAME
         
         return {
             "api_key": get_env_var("ANTHROPIC_API_KEY"),
@@ -27,7 +27,7 @@ class AnthropicConfig:
 
     @staticmethod
     def get_ss_config() -> Dict:
-        model = get_env_var("AGENTIC_BROWSER_TEXT_MODEL")
+        model =  "claude-3-5-sonnet-20241022"
         
         return {
             "api_key": get_env_var("ANTHROPIC_API_KEY"),
