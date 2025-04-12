@@ -24,6 +24,11 @@ class NamespaceRequest(BaseModel):
     namespace: str = Field(..., description="Namespace for the vault operations")
 
 
+class ModelConfigRequest(BaseModel):
+    model_name: str = Field(..., description="Name of the model to use")
+    model_type: str = Field(..., description="Type of model (anthropic or openai)")
+
+
 @router.get("/secrets")
 async def list_secrets(
     namespace: str = Query(..., description="Namespace for the vault operations")
@@ -150,3 +155,61 @@ async def list_namespaces(
             return namespaces
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/model/config")
+async def set_model_config(
+    request: ModelConfigRequest,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    """Set the model configuration for the user"""
+    try:
+        namespace = credentials.credentials  # Using token as namespace
+        model_key = f"{namespace}_model_config"
+        
+        # Store model configuration
+        await vault_ops.set_secret(
+            ns=namespace,
+            secret_key=model_key,
+            secret_value={
+                "model_name": request.model_name,
+                "model_type": request.model_type
+            }
+        )
+        
+        return {
+            "status": 200,
+            "message": {
+                "status": "Model configuration updated",
+                "model_name": request.model_name,
+                "model_type": request.model_type
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error setting model config: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"status": 500, "message": f"Failed to set model configuration: {str(e)}"}
+        )
+
+
+@router.get("/model/config")
+async def get_model_config(
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    """Get the current model configuration"""
+    try:
+        namespace = credentials.credentials
+        model_key = f"{namespace}_model_config"
+        
+        config = await vault_ops.get_secret(namespace, model_key)
+        return {
+            "status": 200,
+            "message": config
+        }
+    except Exception as e:
+        logger.error(f"Error getting model config: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"status": 500, "message": f"Failed to get model configuration: {str(e)}"}
+        )

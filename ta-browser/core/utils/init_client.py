@@ -10,15 +10,15 @@ from core.utils.logger import Logger
 logger = Logger()
 
 
-Models = ["gpt-4o", "claude-3-5-sonnet-20241022"]
+
 # Configuration
-DEFAULT_TEXT_MODEL = "gpt-4o"
-TEXT_MODEL_ENV_VAR = Models[1]  #"AGENTIC_BROWSER_TEXT_MODEL"
-FORCE_DIRECT_MODEL_ENV_VAR = ""           #"anthropic" # by fast api we can change this model type
+Models = ["gpt-4o-2024-08-06", "claude-3-5-sonnet-20241022"]
+DEFAULT_TEXT_MODEL = "gpt-4o-2024-08-06" #"AGENTIC_BROWSER_TEXT_MODEL"
+# FORCE_DIRECT_MODEL_ENV_VAR = "" #"anthropic" # by fast api we can change this model type
 
 # Model-specific configurations
-FORCE_ANTHROPIC_MODEL_NAME = "claude-3-5-sonnet-20241022"  # by fast api we can change this model name
-FORCE_OPENAI_MODEL_NAME = "gpt-4o-mini"   # by fast api we can change this model name
+# FORCE_ANTHROPIC_MODEL_NAME = "claude-3-5-sonnet-20241022"  # by fast api we can change this model name
+# FORCE_OPENAI_MODEL_NAME = "gpt-4o-2024-08-06"   # by fast api we can change this model name
 MAX_RETRIES = 3
 TIMEOUT = 300.0
 
@@ -93,40 +93,40 @@ class ModelFactory:
             return cls._providers['claude']
         return cls._providers['gpt']
 
-class DirectModelInitializer:
-    def __init__(self, model_type: str):
-        self.model_type = model_type
-        self.logger = Logger()
-        self.config = self._get_config()
+# class DirectModelInitializer:
+#     def __init__(self, model_type: str):
+#         self.model_type = model_type
+#         self.logger = Logger()
+#         self.config = self._get_config()
     
-    def _get_config(self) -> ModelConfig:
-        if self.model_type == "anthropic":
-            return {
-                "api_key": os.getenv("ANTHROPIC_API_KEY", ""),
-                "model_name": FORCE_ANTHROPIC_MODEL_NAME,
-                "max_retries": MAX_RETRIES,
-                "timeout": TIMEOUT
-            }
-        return {
-            "api_key": os.getenv("OPENAI_API_KEY", ""),
-            "model_name": FORCE_OPENAI_MODEL_NAME,
-            "max_retries": MAX_RETRIES,
-            "timeout": TIMEOUT
-        }
+#     def _get_config(self) -> ModelConfig:
+#         if self.model_type == "anthropic":
+#             return {
+#                 "api_key": os.getenv("ANTHROPIC_API_KEY", ""),
+#                 "model_name": FORCE_ANTHROPIC_MODEL_NAME,
+#                 "max_retries": MAX_RETRIES,
+#                 "timeout": TIMEOUT
+#             }
+#         return {
+#             "api_key": os.getenv("OPENAI_API_KEY", ""),
+#             "model_name": FORCE_OPENAI_MODEL_NAME,
+#             "max_retries": MAX_RETRIES,
+#             "timeout": TIMEOUT
+#         }
     
-    def initialize(self) -> Tuple[Any, Any]:
-        if not self.config["api_key"]:
-            raise ValueError(f"API key not found. Please set the {'ANTHROPIC_API_KEY' if self.model_type == 'anthropic' else 'OPENAI_API_KEY'} environment variable.")
+#     def initialize(self) -> Tuple[Any, Any]:
+#         if not self.config["api_key"]:
+#             raise ValueError(f"API key not found. Please set the {'ANTHROPIC_API_KEY' if self.model_type == 'anthropic' else 'OPENAI_API_KEY'} environment variable.")
         
-        if self.model_type == "anthropic":
-            client = create_anthropic_client(AsyncAnthropic, self.config)
-            model = AnthropicModel(model_name=self.config["model_name"], anthropic_client=client)
-        else:
-            client = create_openai_client(AsyncOpenAI, self.config)
-            model = OpenAIModel(model_name=self.config["model_name"], openai_client=client)
+#         if self.model_type == "anthropic":
+#             client = create_anthropic_client(AsyncAnthropic, self.config)
+#             model = AnthropicModel(model_name=self.config["model_name"], anthropic_client=client)
+#         else:
+#             client = create_openai_client(AsyncOpenAI, self.config)
+#             model = OpenAIModel(model_name=self.config["model_name"], openai_client=client)
         
-        self.logger.info(f"Initialized directly with {self.model_type} model override.")
-        return client, model
+#         self.logger.info(f"Initialized directly with {self.model_type} model override.")
+#         return client, model   # passing the client instance unnecessarily
 
 class ModelClientExtractor:
     @staticmethod
@@ -136,30 +136,34 @@ class ModelClientExtractor:
                 return getattr(model_instance, client_type)
         raise ValueError("Model instance does not have a valid client")
 
-def get_text_model_instance() -> Any:
+def get_text_model_instance(model_name: str) -> Any:
     """
     Returns the appropriate text model instance based on environment variables
     """
-    model_name = os.getenv(TEXT_MODEL_ENV_VAR, DEFAULT_TEXT_MODEL)
     provider = ModelFactory.get_provider(model_name)
     return provider.create_model(model_name)
 
-async def initialize_client() -> Tuple[Any, Any]:
+
+'''Client initialization'''
+
+async def initialize_client(model_key: int = 0) -> Tuple[Any, Any]:
     """
     Initialize and return the client and model instance
     """
     try:
-        force_model = os.getenv(FORCE_DIRECT_MODEL_ENV_VAR)
+
+        TEXT_MODEL_LOCAL_VAR = Models[model_key] 
+
+        # force_model = os.getenv(FORCE_DIRECT_MODEL_ENV_VAR)
+        # if force_model:
+        #     logger.info(f"Direct model initialization enabled: {force_model}")
+        #     return DirectModelInitializer(force_model).initialize()
         
-        if force_model:
-            logger.info(f"Direct model initialization enabled: {force_model}")
-            return DirectModelInitializer(force_model).initialize()
-        
-        model_instance = get_text_model_instance()
+        model_instance = get_text_model_instance(TEXT_MODEL_LOCAL_VAR)
         client_instance = ModelClientExtractor.extract(model_instance)
         
         logger.info("Client and model instance initialized successfully")
-        return client_instance, model_instance
+        return client_instance, model_instance    # passing the client instance unnecessarily
         
     except Exception as e:
         logger.error(f"Error initializing client: {str(e)}", exc_info=True)

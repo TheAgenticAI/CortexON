@@ -38,6 +38,7 @@ from core.skills.google_search import google_search
 from core.skills.press_key_combination import press_key_combination
 from core.skills.click_using_selector import click
 from core.skills.hashicorp import get_keys, get_secret
+from core.utils.init_client import initialize_client
 
 logger = Logger()
 
@@ -179,7 +180,7 @@ class Orchestrator:
     MAX_RETRIES = 3
     AGENT_TIMEOUT = 30
 
-    def __init__(self, input_mode: str = "GUI_ONLY", no_crit: bool = False) -> None:
+    def __init__(self, key: Optional[int] = None, input_mode: str = "GUI_ONLY", no_crit: bool = False) -> None:
         """
         Initialize the Orchestrator with critique mode configuration
         
@@ -187,6 +188,7 @@ class Orchestrator:
             input_mode (str): Input mode for the orchestrator ("GUI_ONLY" or "API")
             no_crit (bool): Flag to determine if critique should be disabled (default: True)
         """
+        self.key = key
         self.browser_manager = None
         self.shutdown_event = asyncio.Event()
         self.input_mode = input_mode
@@ -284,9 +286,9 @@ class Orchestrator:
 
             # 5. Initialize client and agents
             try:
-                
+                # Initialize client and model instance
                 from core.utils.init_client import initialize_client
-                self.client, model_instance = await initialize_client()
+                self.client, model_instance = await initialize_client(model_key=self.key if hasattr(self, 'key') else None)
                 self.initialize_agents(model_instance)
             except Exception as agent_error:
                 raise RuntimeError(f"Failed to initialize client and agents: {str(agent_error)}") from agent_error

@@ -4,6 +4,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from core.server.routes.web import router as web_router
 from core.server.routes.vault import router as vault_router
+from core.server.routes.model import router as model_router
 from core.server.constants import (
     APP_NAME,
     APP_VERSION,
@@ -55,11 +56,13 @@ def get_app() -> FastAPI:
         ### Features
         - Web automation and browser control
         - Real-time status updates
+        - Model management and orchestration
         """,
         version=APP_VERSION,
         debug=IS_DEBUG,
         openapi_tags=[
-            {"name": "Web Automation", "description": "Web automation operations"}
+            {"name": "Web Automation", "description": "Web automation operations"},
+            {"name": "Model Management", "description": "Model orchestration and control"}
         ],
         lifespan=lifespan,
     )
@@ -73,11 +76,12 @@ def get_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Include only the web router
+    # Include all routers
     fast_app.include_router(web_router, prefix=GLOBAL_PREFIX)
     fast_app.include_router(vault_router, prefix=GLOBAL_PREFIX)
+    fast_app.include_router(model_router, prefix=GLOBAL_PREFIX)
 
-    print(
+    print( 
         f"DEBUG: Total app initialization took {time.time() - start_time:.2f} seconds"
     )
 
