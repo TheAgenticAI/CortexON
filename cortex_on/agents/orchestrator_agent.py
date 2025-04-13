@@ -22,6 +22,7 @@ class orchestrator_deps:
     stream_output: Optional[StreamResponse] = None
     # Add a collection to track agent-specific streams
     agent_responses: Optional[List[StreamResponse]] = None
+    model_preference: str = "Anthropic"
 
 orchestrator_system_prompt = """You are an AI orchestrator that manages a team of agents to solve tasks. You have access to tools for coordinating the agents and managing the task flow.
 
@@ -307,8 +308,11 @@ async def web_surfer_task(ctx: RunContext[orchestrator_deps], task: str) -> str:
 
         await _safe_websocket_send(ctx.deps.websocket, web_surfer_stream_output)
         
-        # Initialize WebSurfer agent
-        web_surfer_agent = WebSurfer(api_url="http://localhost:8000/api/v1/web/stream")
+        # Initialize WebSurfer agent with model preference
+        web_surfer_agent = WebSurfer(
+            api_url="http://localhost:8000/api/v1/web/stream",
+            model_preference=ctx.deps.model_preference
+        )
         
         # Run WebSurfer with its own stream_output
         success, message, messages = await web_surfer_agent.generate_reply(
