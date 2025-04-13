@@ -28,17 +28,19 @@ class SessionTracker:
             "sessions": list(self.active_sessions.keys())
         }
 
-    async def initialize_session(self, start_url: str, no_crit: bool, session_id: str) -> Dict[str, Any]:
+    async def initialize_session(self, start_url: str, no_crit: bool, session_id: str, model_preference: str = "Anthropic") -> Dict[str, Any]:
         """Initialize a new session context"""
         logger.debug(f"Starting session initialization with URL: {start_url}")
+        print(f"[SESSION_TRACKER] Initializing session with model_preference: {model_preference}")
         logger.set_job_id(session_id)
         
         orchestrator = None
 
         try:
             orchestrator = Orchestrator(input_mode="API", no_crit=no_crit)
-            await orchestrator.async_init(job_id=session_id, start_url=start_url)
-            logger.debug(f"Orchestrator async_init completed with params: job_id={session_id}, start_url={start_url}")
+            print(f"[SESSION_TRACKER] Passing model_preference: {model_preference} to orchestrator.async_init")
+            await orchestrator.async_init(job_id=session_id, start_url=start_url, model_preference=model_preference)
+            logger.debug(f"Orchestrator async_init completed with params: job_id={session_id}, start_url={start_url}, model_preference={model_preference}")
 
             notification_queue = Queue()
             orchestrator.notification_queue = notification_queue
@@ -49,7 +51,8 @@ class SessionTracker:
                 "notification_queue": notification_queue,
                 "start_time": datetime.now(),
                 "current_url": start_url,
-                "include_screenshot": False
+                "include_screenshot": False,
+                "model_preference": model_preference
             }
             
             self.add_active_session(session_id, session_context)

@@ -115,6 +115,7 @@ async def stream_session(
     and streams back real-time updates as the command is executed.
     """
     print(f"[{time.time()}] Stream route: Starting processing")
+    print(f"[STREAM] Received request with model_preference: {request.model_preference}")
     
     session_tracker = SessionTracker()
 
@@ -124,8 +125,12 @@ async def stream_session(
         
         # Initialize the session
         logger.debug(f"Initializing stream session with ID {session_id}")
+        print(f"[STREAM] Initializing session with model_preference: {request.model_preference}")
         session_info = await session_tracker.initialize_session(
-            request.url, request.critique_disabled, session_id
+            request.url, 
+            request.critique_disabled, 
+            session_id,
+            request.model_preference
         )
         
         session_context = session_tracker.active_sessions.get(session_id)

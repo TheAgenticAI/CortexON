@@ -38,10 +38,11 @@ class DateTimeEncoder(json.JSONEncoder):
 
 # Main Orchestrator Class
 class SystemInstructor:
-    def __init__(self):
+    def __init__(self, model_preference: str = "Anthropic"):
         self.websocket: Optional[WebSocket] = None
         self.stream_output: Optional[StreamResponse] = None
         self.orchestrator_response: List[StreamResponse] = []
+        self.model_preference = model_preference
         self._setup_logging()
 
     def _setup_logging(self) -> None:
@@ -80,7 +81,8 @@ class SystemInstructor:
         deps_for_orchestrator = orchestrator_deps(
             websocket=self.websocket,
             stream_output=stream_output,
-            agent_responses=self.orchestrator_response  # Pass reference to collection
+            agent_responses=self.orchestrator_response,  # Pass reference to collection
+            model_preference=self.model_preference
         )
 
         try:

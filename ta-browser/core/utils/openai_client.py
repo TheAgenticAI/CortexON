@@ -28,57 +28,15 @@ class OpenAIConfig:
         return True
     @staticmethod
     def get_text_config() -> Dict:
-        model = get_env_var("AGENTIC_BROWSER_TEXT_MODEL")
-        if not OpenAIConfig.validate_model(model):
-            raise ModelValidationError(
-                f"Invalid model: {model}. Must match one of the patterns: "
-                f"{', '.join(OpenAIConfig.VALID_MODEL_PATTERNS)}"
-            )
-        
         return {
-            "api_key": get_env_var("AGENTIC_BROWSER_TEXT_API_KEY"),
-            "base_url": get_env_var("AGENTIC_BROWSER_TEXT_BASE_URL"),
-            "model": model,
+            "api_key": get_env_var("OPENAI_API_KEY"),
+            "base_url": "https://api.openai.com/v1",
+            "model": get_env_var("OPENAI_MODEL_NAME"),
             "max_retries": 3,
             "timeout": 300.0
         }
 
-    @staticmethod
-    def get_ss_config() -> Dict:
-        model = get_env_var("AGENTIC_BROWSER_SS_MODEL")
-        if not OpenAIConfig.validate_model(model):
-            raise ModelValidationError(
-                f"Invalid model: {model}. Must match one of the patterns: "
-                f"{', '.join(OpenAIConfig.VALID_MODEL_PATTERNS)}"
-            )
-        
-        return {
-            "api_key": get_env_var("AGENTIC_BROWSER_SS_API_KEY"),
-            "base_url": get_env_var("AGENTIC_BROWSER_SS_BASE_URL"),
-            "model": model,
-            "max_retries": 3,
-            "timeout": 300.0
-        }
 
-async def validate_models(client: AsyncOpenAI) -> bool:
-    """Validate that configured models are available"""
-    try:
-        available_models = await client.models.list()
-        available_model_ids = [model.id for model in available_models.data]
-        
-        text_model = get_text_model()
-        ss_model = get_ss_model()
-        
-        if text_model not in available_model_ids:
-            raise ModelValidationError(f"Text model '{text_model}' not available. Available models: {', '.join(available_model_ids)}")
-        
-        if ss_model not in available_model_ids:
-            raise ModelValidationError(f"Screenshot model '{ss_model}' not available. Available models: {', '.join(available_model_ids)}")
-        
-        return True
-    except Exception as e:
-        logger.error(f"Model validation failed: {str(e)}")
-        return False
 
 def create_client_with_retry(client_class, config: dict):
     """Create an OpenAI client with proper error handling"""
@@ -102,26 +60,9 @@ def get_client():
     config = OpenAIConfig.get_text_config()
     return create_client_with_retry(AsyncOpenAI, config)
 
-def get_ss_client():
-    """Get OpenAI client for screenshot analysis"""
-    config = OpenAIConfig.get_ss_config()
-    return create_client_with_retry(OpenAI, config)
-
-def get_text_model() -> str:
-    """Get model name for text analysis"""
-    return OpenAIConfig.get_text_config()["model"]
-
-def get_ss_model() -> str:
-    """Get model name for screenshot analysis"""
-    return OpenAIConfig.get_ss_config()["model"]
-
 # Example usage
 async def initialize_and_validate():
     """Initialize client and validate configuration"""
     client = get_client()
-    
-    # Validate models
-    if not await validate_models(client):
-        raise ModelValidationError("Failed to validate models. Please check your configuration.")
     
     return client

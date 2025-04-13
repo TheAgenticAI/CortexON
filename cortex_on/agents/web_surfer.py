@@ -29,19 +29,25 @@ load_dotenv()
 TIMEOUT = 9999999999999999999999999999999999999999999
 
 class WebSurfer:
-    def __init__(self, api_url: str = "http://localhost:8000/api/v1/web/stream"):
+    def __init__(self, api_url: str = "http://localhost:8000/api/v1/web/stream", model_preference: str = "Anthropic"):
         self.api_url = api_url
         self.name = "Web Surfer Agent"
         self.description = "An agent that is a websurfer and a webscraper that  can access any web-page to extract information or perform actions."
         self.websocket: Optional[WebSocket] = None
         self.stream_output: Optional[StreamResponse] = None
+        self.model_preference = model_preference
 
     async def _make_api_call(self, instruction: str) -> Tuple[int, List[Dict[str, Any]]]:
         session_timeout = aiohttp.ClientTimeout(total=None, sock_connect=TIMEOUT, sock_read=TIMEOUT)
         async with aiohttp.ClientSession(timeout=session_timeout) as session:
             final_json_response = []
             try:
-                payload = {"cmd": instruction, "critique_disabled": False}
+                payload = {
+                    "cmd": instruction, 
+                    "critique_disabled": False,
+                    "model_preference": self.model_preference
+                }
+                print(f"[WEB_SURFER] Making API call with model_preference: {self.model_preference}")
                 async with session.post(self.api_url, json=payload) as response:
                     if response.status != 200:
                         error_text = await response.text()
