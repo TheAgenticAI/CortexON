@@ -261,7 +261,10 @@ class Orchestrator:
                 raise ValueError("job_id is required")
 
             # 1. Create conversation_storage with job_id
-            self.conversation_storage = ConversationStorage(job_id)
+            try:
+                self.conversation_storage = ConversationStorage(job_id=self.job_id)
+            except Exception as storage_error:
+                raise RuntimeError(f"Failed to initialize conversation storage: {str(storage_error)}") from storage_error
             
             # 2. Initialize browser manager
             try:
