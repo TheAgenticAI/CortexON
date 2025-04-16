@@ -241,7 +241,7 @@ async def send_stream_update(ctx: RunContext[CoderAgentDeps], message: str) -> N
 
 # Initialize the agent
 
-def coder_agent(model_preference: str = "Anthropic"):
+async def coder_agent(model_preference: str = "Anthropic") -> Agent:
     if model_preference == "Anthropic":
         model = get_anthropic_model_instance()
     elif model_preference == "OpenAI":
@@ -256,167 +256,169 @@ def coder_agent(model_preference: str = "Anthropic"):
     deps_type=CoderAgentDeps,
     system_prompt=coder_system_message
     )    
-    return coder_agent
 
-@coder_agent.tool
-async def execute_shell(ctx: RunContext[CoderAgentDeps], command: str) -> str:
-    """
-    Executes a shell command within a restricted directory and returns the output.
-    This consolidated tool handles terminal commands and file operations.
-    """
-    try:
-        # Extract base command for security checks and messaging
-        base_command = command.split()[0] if command.split() else ""
-        
-        # Send operation description message
-        operation_message = get_high_level_operation_message(command, base_command)
-        await send_stream_update(ctx, operation_message)
-        
-        logfire.info("Executing shell command: {command}", command=command)
-        
-        # Setup restricted directory
-        base_dir = os.path.abspath(os.path.dirname(__file__))
-        restricted_dir = os.path.join(base_dir, "code_files")
-        os.makedirs(restricted_dir, exist_ok=True)
-        
-        # Security check
-        if base_command not in ALLOWED_COMMANDS:
-            await send_stream_update(ctx, "Operation not permitted")
-            return f"Error: Command '{base_command}' is not allowed for security reasons."
-        
-        # Change to restricted directory for execution
-        original_dir = os.getcwd()
-        os.chdir(restricted_dir)
-        
+    @coder_agent.tool
+    async def execute_shell(ctx: RunContext[CoderAgentDeps], command: str) -> str:
+        """
+        Executes a shell command within a restricted directory and returns the output.
+        This consolidated tool handles terminal commands and file operations.
+        """
         try:
-            # Handle echo with redirection (file writing)
-            if ">" in command and base_command == "echo":
-                file_path = command.split(">", 1)[1].strip()
-                await send_stream_update(ctx, f"Writing content to {file_path}")
-                
-                # Parse command parts
-                parts = command.split(">", 1)
-                echo_cmd = parts[0].strip()
-                
-                # Extract content, removing quotes if present
-                content = echo_cmd[5:].strip()
-                if (content.startswith('"') and content.endswith('"')) or \
-                   (content.startswith("'") and content.endswith("'")):
-                    content = content[1:-1]
-                
-                try:
-                    with open(file_path, "w") as file:
-                        file.write(content)
-                    
-                    await send_stream_update(ctx, f"File {file_path} created successfully")
-                    return f"Successfully wrote to {file_path}"
-                except Exception as e:
-                    error_msg = f"Error writing to file: {str(e)}"
-                    await send_stream_update(ctx, f"Failed to create file {file_path}")
-                    logfire.error(error_msg, exc_info=True)
-                    return error_msg
+            # Extract base command for security checks and messaging
+            base_command = command.split()[0] if command.split() else ""
             
-            # Handle cat with here-document for multiline file writing
-            elif "<<" in command and base_command == "cat":
-                cmd_parts = command.split("<<", 1)
-                cat_part = cmd_parts[0].strip()
-                
-                # Extract filename for status message if possible
-                file_path = None
-                if ">" in cat_part:
-                    file_path = cat_part.split(">", 1)[1].strip()
-                    await send_stream_update(ctx, f"Creating file {file_path}")
-                
-                try:
-                    # Parse heredoc parts
-                    doc_part = cmd_parts[1].strip()
+            # Send operation description message
+            operation_message = get_high_level_operation_message(command, base_command)
+            await send_stream_update(ctx, operation_message)
+            
+            logfire.info("Executing shell command: {command}", command=command)
+            
+            # Setup restricted directory
+            base_dir = os.path.abspath(os.path.dirname(__file__))
+            restricted_dir = os.path.join(base_dir, "code_files")
+            os.makedirs(restricted_dir, exist_ok=True)
+            
+            # Security check
+            if base_command not in ALLOWED_COMMANDS:
+                await send_stream_update(ctx, "Operation not permitted")
+                return f"Error: Command '{base_command}' is not allowed for security reasons."
+            
+            # Change to restricted directory for execution
+            original_dir = os.getcwd()
+            os.chdir(restricted_dir)
+            
+            try:
+                # Handle echo with redirection (file writing)
+                if ">" in command and base_command == "echo":
+                    file_path = command.split(">", 1)[1].strip()
+                    await send_stream_update(ctx, f"Writing content to {file_path}")
                     
-                    # Extract filename
-                    if ">" in cat_part:
-                        file_path = cat_part.split(">", 1)[1].strip()
-                    else:
-                        await send_stream_update(ctx, "Invalid file operation")
-                        return "Error: Invalid cat command format. Must include redirection."
+                    # Parse command parts
+                    parts = command.split(">", 1)
+                    echo_cmd = parts[0].strip()
                     
-                    # Parse the heredoc content and delimiter
-                    if "\n" in doc_part:
-                        delimiter_and_content = doc_part.split("\n", 1)
-                        delimiter = delimiter_and_content[0].strip("'").strip('"')
-                        content = delimiter_and_content[1]
+                    # Extract content, removing quotes if present
+                    content = echo_cmd[5:].strip()
+                    if (content.startswith('"') and content.endswith('"')) or \
+                    (content.startswith("'") and content.endswith("'")):
+                        content = content[1:-1]
+                    
+                    try:
+                        with open(file_path, "w") as file:
+                            file.write(content)
                         
-                        # Find the end delimiter and extract content
-                        if f"\n{delimiter}" in content:
-                            content = content.split(f"\n{delimiter}")[0]
-                            
-                            # Write to file
-                            with open(file_path, "w") as file:
-                                file.write(content)
-                            
-                            await send_stream_update(ctx, f"File {file_path} created successfully")
-                            return f"Successfully wrote multiline content to {file_path}"
-                        else:
-                            await send_stream_update(ctx, "File content format error")
-                            return "Error: End delimiter not found in heredoc"
-                    else:
-                        await send_stream_update(ctx, "File content format error")
-                        return "Error: Invalid heredoc format"
-                except Exception as e:
-                    error_msg = f"Error processing cat with heredoc: {str(e)}"
-                    file_path_str = file_path if file_path else 'file'
-                    await send_stream_update(ctx, f"Failed to create file {file_path_str}")
-                    logfire.error(error_msg, exc_info=True)
-                    return error_msg
-            
-            # Execute standard commands
-            else:
-                # Send execution message
-                execution_msg = get_high_level_execution_message(command, base_command)
-                await send_stream_update(ctx, execution_msg)
-                
-                # Execute the command using subprocess
-                try:
-                    args = shlex.split(command)
-                    result = subprocess.run(
-                        args,
-                        shell=True,
-                        capture_output=True,
-                        text=True,
-                        timeout=60,
-                    )
-                    
-                    logfire.info(f"Command executed: {result.args}")
-                    
-                    # Handle success
-                    if result.returncode == 0:
-                        success_msg = get_success_message(command, base_command)
-                        await send_stream_update(ctx, success_msg)
-                        logfire.info(f"Command executed successfully: {result.stdout}")
-                        return result.stdout
-                    
-                    # Handle failure
-                    else:
-                        files = os.listdir('.')
-                        error_msg = f"Command failed with error code {result.returncode}:\n{result.stderr}\n\nFiles in directory: {files}"
-                        failure_msg = get_failure_message(command, base_command)
-                        await send_stream_update(ctx, failure_msg)
+                        await send_stream_update(ctx, f"File {file_path} created successfully")
+                        return f"Successfully wrote to {file_path}"
+                    except Exception as e:
+                        error_msg = f"Error writing to file: {str(e)}"
+                        await send_stream_update(ctx, f"Failed to create file {file_path}")
+                        logfire.error(error_msg, exc_info=True)
                         return error_msg
                 
-                except subprocess.TimeoutExpired:
-                    await send_stream_update(ctx, "Operation timed out")
-                    return "Command execution timed out after 60 seconds"
+                # Handle cat with here-document for multiline file writing
+                elif "<<" in command and base_command == "cat":
+                    cmd_parts = command.split("<<", 1)
+                    cat_part = cmd_parts[0].strip()
+                    
+                    # Extract filename for status message if possible
+                    file_path = None
+                    if ">" in cat_part:
+                        file_path = cat_part.split(">", 1)[1].strip()
+                        await send_stream_update(ctx, f"Creating file {file_path}")
+                    
+                    try:
+                        # Parse heredoc parts
+                        doc_part = cmd_parts[1].strip()
+                        
+                        # Extract filename
+                        if ">" in cat_part:
+                            file_path = cat_part.split(">", 1)[1].strip()
+                        else:
+                            await send_stream_update(ctx, "Invalid file operation")
+                            return "Error: Invalid cat command format. Must include redirection."
+                        
+                        # Parse the heredoc content and delimiter
+                        if "\n" in doc_part:
+                            delimiter_and_content = doc_part.split("\n", 1)
+                            delimiter = delimiter_and_content[0].strip("'").strip('"')
+                            content = delimiter_and_content[1]
+                            
+                            # Find the end delimiter and extract content
+                            if f"\n{delimiter}" in content:
+                                content = content.split(f"\n{delimiter}")[0]
+                                
+                                # Write to file
+                                with open(file_path, "w") as file:
+                                    file.write(content)
+                                
+                                await send_stream_update(ctx, f"File {file_path} created successfully")
+                                return f"Successfully wrote multiline content to {file_path}"
+                            else:
+                                await send_stream_update(ctx, "File content format error")
+                                return "Error: End delimiter not found in heredoc"
+                        else:
+                            await send_stream_update(ctx, "File content format error")
+                            return "Error: Invalid heredoc format"
+                    except Exception as e:
+                        error_msg = f"Error processing cat with heredoc: {str(e)}"
+                        file_path_str = file_path if file_path else 'file'
+                        await send_stream_update(ctx, f"Failed to create file {file_path_str}")
+                        logfire.error(error_msg, exc_info=True)
+                        return error_msg
                 
-                except Exception as e:
-                    error_msg = f"Error executing command: {str(e)}"
-                    await send_stream_update(ctx, "Operation failed")
-                    logfire.error(error_msg, exc_info=True)
-                    return error_msg
-        
-        finally:
-            # Always return to the original directory
-            os.chdir(original_dir)
+                # Execute standard commands
+                else:
+                    # Send execution message
+                    execution_msg = get_high_level_execution_message(command, base_command)
+                    await send_stream_update(ctx, execution_msg)
+                    
+                    # Execute the command using subprocess
+                    try:
+                        args = shlex.split(command)
+                        result = subprocess.run(
+                            args,
+                            shell=True,
+                            capture_output=True,
+                            text=True,
+                            timeout=60,
+                        )
+                        
+                        logfire.info(f"Command executed: {result.args}")
+                        
+                        # Handle success
+                        if result.returncode == 0:
+                            success_msg = get_success_message(command, base_command)
+                            await send_stream_update(ctx, success_msg)
+                            logfire.info(f"Command executed successfully: {result.stdout}")
+                            return result.stdout
+                        
+                        # Handle failure
+                        else:
+                            files = os.listdir('.')
+                            error_msg = f"Command failed with error code {result.returncode}:\n{result.stderr}\n\nFiles in directory: {files}"
+                            failure_msg = get_failure_message(command, base_command)
+                            await send_stream_update(ctx, failure_msg)
+                            return error_msg
+                    
+                    except subprocess.TimeoutExpired:
+                        await send_stream_update(ctx, "Operation timed out")
+                        return "Command execution timed out after 60 seconds"
+                    
+                    except Exception as e:
+                        error_msg = f"Error executing command: {str(e)}"
+                        await send_stream_update(ctx, "Operation failed")
+                        logfire.error(error_msg, exc_info=True)
+                        return error_msg
             
-    except Exception as e:
-        error_msg = f"Error executing command: {str(e)}"
-        await send_stream_update(ctx, "Operation failed")
-        logfire.error(error_msg, exc_info=True)
-        return error_msg
+            finally:
+                # Always return to the original directory
+                os.chdir(original_dir)
+                
+        except Exception as e:
+            error_msg = f"Error executing command: {str(e)}"
+            await send_stream_update(ctx, "Operation failed")
+            logfire.error(error_msg, exc_info=True)
+            return error_msg
+        
+    logfire.info("All tools initialized for coder agent")
+    return coder_agent

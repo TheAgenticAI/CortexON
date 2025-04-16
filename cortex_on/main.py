@@ -29,9 +29,9 @@ async def lifespan(app: FastAPI):
     
     yield
     
-    # Cleanup
-    if instructor:
-        await instructor.shutdown()
+    # # Cleanup
+    # if instructor:
+    #     await instructor.shutdown()
 
 
 app: FastAPI = FastAPI(lifespan=lifespan)
