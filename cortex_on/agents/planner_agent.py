@@ -10,7 +10,7 @@ from pydantic_ai import Agent
 from pydantic_ai.models.anthropic import AnthropicModel
 
 # Local application imports
-from utils.ant_client import get_client
+from utils.ant_client import get_client, get_anthropic_model_instance, get_openai_model_instance, get_openai_client
 
 
 
@@ -176,17 +176,24 @@ Available agents:
 class PlannerResult(BaseModel):
     plan: str = Field(description="The generated or updated plan in string format - this should be the complete plan text")
 
-model = AnthropicModel(
-    model_name=os.environ.get("ANTHROPIC_MODEL_NAME"),
-    anthropic_client=get_client()
-)
 
-planner_agent = Agent(
-    model=model,
-    name="Planner Agent",
-    result_type=PlannerResult,
-    system_prompt=planner_prompt 
-)
+
+
+def planner_agent(model_preference: str = "Anthropic"): 
+    if model_preference == "Anthropic":
+        model = get_anthropic_model_instance()
+    elif model_preference == "OpenAI":
+        model = get_openai_model_instance()
+    else:
+        raise ValueError(f"Unknown model_preference: {model_preference}")
+    print(f"[PLANNER_INIT] Creating planner agent with model: {model}")
+    planner_agent = Agent(
+        model=model,
+        name="Planner Agent",
+        result_type=PlannerResult,
+        system_prompt=planner_prompt 
+    )
+    return planner_agent
 
 @planner_agent.tool_plain
 async def update_todo_status(task_description: str) -> str:

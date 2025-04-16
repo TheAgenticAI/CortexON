@@ -25,8 +25,10 @@ from utils.stream_response_format import StreamResponse
 
 load_dotenv()
 
-
-
+print("[INIT] Loading agents...")
+print(f"[INIT] Planner agent loaded: {planner_agent}")
+print(f"[INIT] Coder agent loaded: {coder_agent}")
+print(f"[INIT] Orchestrator agent loaded: {get_orchestrator_agent}")
 
 class DateTimeEncoder(json.JSONEncoder):
     """Custom JSON encoder that can handle datetime objects"""
@@ -39,11 +41,13 @@ class DateTimeEncoder(json.JSONEncoder):
 # Main Orchestrator Class
 class SystemInstructor:
     def __init__(self, model_preference: str = "Anthropic"):
+        print(f"[INIT] Initializing SystemInstructor with model_preference: {model_preference}")
         self.websocket: Optional[WebSocket] = None
         self.stream_output: Optional[StreamResponse] = None
         self.orchestrator_response: List[StreamResponse] = []
         self.model_preference = model_preference
         self._setup_logging()
+        print("[INIT] SystemInstructor initialization complete")
 
     def _setup_logging(self) -> None:
         """Configure logging with proper formatting"""
@@ -91,10 +95,16 @@ class SystemInstructor:
             stream_output.steps.append("Agents initialized successfully")
             await self._safe_websocket_send(stream_output)
 
-            orchestrator_response = await orchestrator_agent.run(
+            print("Orchestrator agent running")
+            
+            agent = orchestrator_agent(self.model_preference)
+            orchestrator_response = await agent.run(
                 user_prompt=task,
                 deps=deps_for_orchestrator
             )
+
+            logfire.info(f"Orchestrator Agent using model type: {self.model_preference}")
+
             stream_output.output = orchestrator_response.data
             stream_output.status_code = 200
             logfire.debug(f"Orchestrator response: {orchestrator_response.data}")

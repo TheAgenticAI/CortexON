@@ -1,17 +1,19 @@
 import asyncio
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, WebSocket
 from fastapi.responses import StreamingResponse
 from typing import AsyncGenerator
 import json
 import time
 from datetime import datetime
 from queue import Empty
+import os
 
 from core.server.models.web import StreamRequestModel, StreamResponseModel
 from core.server.constants import GLOBAL_TIMEOUT
 from core.server.utils.timeout import timeout
 from core.server.utils.session_tracker import SessionTracker
 from core.utils.logger import Logger
+from core.utils.init_client import initialize_client
 
 logger = Logger()
 
@@ -150,4 +152,14 @@ async def stream_session(
 
     except Exception as e:
         logger.error(f"Error in /stream: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/api/v1/model/preference")
+async def get_model_preference():
+    """Get the current model preference"""
+    try:
+        # Get model preference from environment or use default
+        model_preference = os.getenv("MODEL_PREFERENCE", "Anthropic")
+        return {"model_preference": model_preference}
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
