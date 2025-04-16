@@ -179,7 +179,7 @@ class PlannerResult(BaseModel):
 
 
 
-def planner_agent(model_preference: str = "Anthropic"): 
+async def planner_agent(model_preference: str = "Anthropic") -> Agent:
     if model_preference == "Anthropic":
         model = get_anthropic_model_instance()
     elif model_preference == "OpenAI":
@@ -193,162 +193,164 @@ def planner_agent(model_preference: str = "Anthropic"):
         result_type=PlannerResult,
         system_prompt=planner_prompt 
     )
-    return planner_agent
 
-@planner_agent.tool_plain
-async def update_todo_status(task_description: str) -> str:
-    """
-    A helper function that logs the update request but lets the planner agent handle the actual update logic.
-    
-    Args:
-        task_description: Description of the completed task
+    @planner_agent.tool_plain
+    async def update_todo_status(task_description: str) -> str:
+        """
+        A helper function that logs the update request but lets the planner agent handle the actual update logic.
         
-    Returns:
-        A simple log message
-    """
-    logfire.info(f"Received request to update todo.md for task: {task_description}")
-    return f"Received update request for: {task_description}"
+        Args:
+            task_description: Description of the completed task
+            
+        Returns:
+            A simple log message
+        """
+        logfire.info(f"Received request to update todo.md for task: {task_description}")
+        return f"Received update request for: {task_description}"
 
-@planner_agent.tool_plain
-async def execute_terminal(command: str) -> str:
-    """
-    Executes a terminal command within the planner directory for file operations.
-    This consolidated tool handles reading and writing plan files.
-    Restricted to only read and write operations for security.
-    """
-    try:
-        logfire.info(f"Executing terminal command: {command}")
-        
-        # Define the restricted directory
-        base_dir = os.path.abspath(os.path.dirname(__file__))
-        planner_dir = os.path.join(base_dir, "planner")
-        os.makedirs(planner_dir, exist_ok=True)
-        
-        # Extract the base command
-        base_command = command.split()[0]
-        
-        # Allow only read and write operations
-        ALLOWED_COMMANDS = {"cat", "echo", "ls"}
-        
-        # Security checks
-        if base_command not in ALLOWED_COMMANDS:
-            return f"Error: Command '{base_command}' is not allowed. Only read and write operations are permitted."
-        
-        if ".." in command or "~" in command or "/" in command:
-            return "Error: Path traversal attempts are not allowed."
-        
-        # Change to the restricted directory
-        original_dir = os.getcwd()
-        os.chdir(planner_dir)
-        
+    @planner_agent.tool_plain
+    async def execute_terminal(command: str) -> str:
+        """
+        Executes a terminal command within the planner directory for file operations.
+        This consolidated tool handles reading and writing plan files.
+        Restricted to only read and write operations for security.
+        """
         try:
-            # Handle echo with >> (append)
-            if base_command == "echo" and ">>" in command:
-                try:
-                    # Split only on the first occurrence of >>
-                    parts = command.split(">>", 1)
-                    echo_part = parts[0].strip()
+            logfire.info(f"Executing terminal command: {command}")
+            
+            # Define the restricted directory
+            base_dir = os.path.abspath(os.path.dirname(__file__))
+            planner_dir = os.path.join(base_dir, "planner")
+            os.makedirs(planner_dir, exist_ok=True)
+            
+            # Extract the base command
+            base_command = command.split()[0]
+            
+            # Allow only read and write operations
+            ALLOWED_COMMANDS = {"cat", "echo", "ls"}
+            
+            # Security checks
+            if base_command not in ALLOWED_COMMANDS:
+                return f"Error: Command '{base_command}' is not allowed. Only read and write operations are permitted."
+            
+            if ".." in command or "~" in command or "/" in command:
+                return "Error: Path traversal attempts are not allowed."
+            
+            # Change to the restricted directory
+            original_dir = os.getcwd()
+            os.chdir(planner_dir)
+            
+            try:
+                # Handle echo with >> (append)
+                if base_command == "echo" and ">>" in command:
+                    try:
+                        # Split only on the first occurrence of >>
+                        parts = command.split(">>", 1)
+                        echo_part = parts[0].strip()
+                        file_path = parts[1].strip()
+                        
+                        # Extract content after echo command
+                        content = echo_part[4:].strip()
+                        
+                        # Handle quotes if present
+                        if (content.startswith('"') and content.endswith('"')) or \
+                        (content.startswith("'") and content.endswith("'")):
+                            content = content[1:-1]
+                        
+                        # Append to file
+                        with open(file_path, "a") as file:
+                            file.write(content + "\n")
+                        return f"Successfully appended to {file_path}"
+                    except Exception as e:
+                        logfire.error(f"Error appending to file: {str(e)}", exc_info=True)
+                        return f"Error appending to file: {str(e)}"
+                
+                # Special handling for echo with redirection (file writing)
+                elif ">" in command and base_command == "echo" and ">>" not in command:
+                    # Simple parsing for echo "content" > file.txt
+                    parts = command.split(">", 1)
+                    echo_cmd = parts[0].strip()
                     file_path = parts[1].strip()
                     
-                    # Extract content after echo command
-                    content = echo_part[4:].strip()
-                    
-                    # Handle quotes if present
+                    # Extract content between echo and > (removing quotes if present)
+                    content = echo_cmd[5:].strip()
                     if (content.startswith('"') and content.endswith('"')) or \
-                       (content.startswith("'") and content.endswith("'")):
+                    (content.startswith("'") and content.endswith("'")):
                         content = content[1:-1]
                     
-                    # Append to file
-                    with open(file_path, "a") as file:
-                        file.write(content + "\n")
-                    return f"Successfully appended to {file_path}"
-                except Exception as e:
-                    logfire.error(f"Error appending to file: {str(e)}", exc_info=True)
-                    return f"Error appending to file: {str(e)}"
-            
-            # Special handling for echo with redirection (file writing)
-            elif ">" in command and base_command == "echo" and ">>" not in command:
-                # Simple parsing for echo "content" > file.txt
-                parts = command.split(">", 1)
-                echo_cmd = parts[0].strip()
-                file_path = parts[1].strip()
+                    # Write to file
+                    try:
+                        with open(file_path, "w") as file:
+                            file.write(content)
+                        return f"Successfully wrote to {file_path}"
+                    except Exception as e:
+                        logfire.error(f"Error writing to file: {str(e)}", exc_info=True)
+                        return f"Error writing to file: {str(e)}"
                 
-                # Extract content between echo and > (removing quotes if present)
-                content = echo_cmd[5:].strip()
-                if (content.startswith('"') and content.endswith('"')) or \
-                   (content.startswith("'") and content.endswith("'")):
-                    content = content[1:-1]
-                
-                # Write to file
-                try:
-                    with open(file_path, "w") as file:
-                        file.write(content)
-                    return f"Successfully wrote to {file_path}"
-                except Exception as e:
-                    logfire.error(f"Error writing to file: {str(e)}", exc_info=True)
-                    return f"Error writing to file: {str(e)}"
-            
-            # Handle cat with here-document for multiline file writing
-            elif "<<" in command and base_command == "cat":
-                try:
-                    # Parse the command: cat > file.md << 'EOF'\nplan content\nEOF
-                    cmd_parts = command.split("<<", 1)
-                    cat_part = cmd_parts[0].strip()
-                    doc_part = cmd_parts[1].strip()
-                    
-                    # Extract filename
-                    if ">" in cat_part:
-                        file_path = cat_part.split(">", 1)[1].strip()
-                    else:
-                        return "Error: Invalid cat command format. Must include redirection."
-                    
-                    # Parse the heredoc content
-                    if "\n" in doc_part:
-                        delimiter_and_content = doc_part.split("\n", 1)
-                        delimiter = delimiter_and_content[0].strip("'").strip('"')
-                        content = delimiter_and_content[1]
+                # Handle cat with here-document for multiline file writing
+                elif "<<" in command and base_command == "cat":
+                    try:
+                        # Parse the command: cat > file.md << 'EOF'\nplan content\nEOF
+                        cmd_parts = command.split("<<", 1)
+                        cat_part = cmd_parts[0].strip()
+                        doc_part = cmd_parts[1].strip()
                         
-                        # Find the end delimiter and extract content
-                        if f"\n{delimiter}" in content:
-                            content = content.split(f"\n{delimiter}")[0]
-                            
-                            # Write to file
-                            with open(file_path, "w") as file:
-                                file.write(content)
-                            return f"Successfully wrote multiline content to {file_path}"
+                        # Extract filename
+                        if ">" in cat_part:
+                            file_path = cat_part.split(">", 1)[1].strip()
                         else:
-                            return "Error: End delimiter not found in heredoc"
-                    else:
-                        return "Error: Invalid heredoc format"
-                except Exception as e:
-                    logfire.error(f"Error processing cat with heredoc: {str(e)}", exc_info=True)
-                    return f"Error processing cat with heredoc: {str(e)}"
-            
-            # Handle cat for reading files
-            elif base_command == "cat" and ">" not in command and "<<" not in command:
-                try:
-                    file_path = command.split()[1]
-                    with open(file_path, "r") as file:
-                        content = file.read()
-                    return content
-                except Exception as e:
-                    logfire.error(f"Error reading file: {str(e)}", exc_info=True)
-                    return f"Error reading file: {str(e)}"
-            
-            # Handle ls for listing files
-            elif base_command == "ls":
-                try:
-                    files = os.listdir('.')
-                    return "Files in planner directory:\n" + "\n".join(files)
-                except Exception as e:
-                    logfire.error(f"Error listing files: {str(e)}", exc_info=True)
-                    return f"Error listing files: {str(e)}"
-            else:
-                return f"Error: Command '{command}' is not supported. Only read and write operations are permitted."
-            
-        finally:
-            os.chdir(original_dir)
-            
-    except Exception as e:
-        logfire.error(f"Error executing command: {str(e)}", exc_info=True)
-        return f"Error executing command: {str(e)}"
+                            return "Error: Invalid cat command format. Must include redirection."
+                        
+                        # Parse the heredoc content
+                        if "\n" in doc_part:
+                            delimiter_and_content = doc_part.split("\n", 1)
+                            delimiter = delimiter_and_content[0].strip("'").strip('"')
+                            content = delimiter_and_content[1]
+                            
+                            # Find the end delimiter and extract content
+                            if f"\n{delimiter}" in content:
+                                content = content.split(f"\n{delimiter}")[0]
+                                
+                                # Write to file
+                                with open(file_path, "w") as file:
+                                    file.write(content)
+                                return f"Successfully wrote multiline content to {file_path}"
+                            else:
+                                return "Error: End delimiter not found in heredoc"
+                        else:
+                            return "Error: Invalid heredoc format"
+                    except Exception as e:
+                        logfire.error(f"Error processing cat with heredoc: {str(e)}", exc_info=True)
+                        return f"Error processing cat with heredoc: {str(e)}"
+                
+                # Handle cat for reading files
+                elif base_command == "cat" and ">" not in command and "<<" not in command:
+                    try:
+                        file_path = command.split()[1]
+                        with open(file_path, "r") as file:
+                            content = file.read()
+                        return content
+                    except Exception as e:
+                        logfire.error(f"Error reading file: {str(e)}", exc_info=True)
+                        return f"Error reading file: {str(e)}"
+                
+                # Handle ls for listing files
+                elif base_command == "ls":
+                    try:
+                        files = os.listdir('.')
+                        return "Files in planner directory:\n" + "\n".join(files)
+                    except Exception as e:
+                        logfire.error(f"Error listing files: {str(e)}", exc_info=True)
+                        return f"Error listing files: {str(e)}"
+                else:
+                    return f"Error: Command '{command}' is not supported. Only read and write operations are permitted."
+                
+            finally:
+                os.chdir(original_dir)
+                
+        except Exception as e:
+            logfire.error(f"Error executing command: {str(e)}", exc_info=True)
+            return f"Error executing command: {str(e)}"
+        
+    logfire.info("All tools initialized for planner agent")
+    return planner_agent
