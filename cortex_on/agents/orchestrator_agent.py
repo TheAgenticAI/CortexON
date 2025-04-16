@@ -12,7 +12,7 @@ from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai import Agent, RunContext
 from agents.web_surfer import WebSurfer
 from utils.stream_response_format import StreamResponse
-from agents.planner_agent import planner_agent, update_todo_status
+from agents.planner_agent import planner_agent
 from agents.code_agent import coder_agent, CoderAgentDeps
 from utils.ant_client import get_client, get_anthropic_model_instance, get_openai_model_instance, get_openai_client
 
@@ -181,7 +181,7 @@ Basic workflow:
 #     deps_type=orchestrator_deps
 # )
 # print("[ORCH_INIT] Orchestrator agent created successfully")
-async def orchestrator_agent(model_preference: str) -> Agent:
+async def orchestrator_agent(model_preference: str) :
     if model_preference == "Anthropic":
         model = get_anthropic_model_instance()
     elif model_preference == "OpenAI":
@@ -222,7 +222,7 @@ async def orchestrator_agent(model_preference: str) -> Agent:
             await _safe_websocket_send(ctx.deps.websocket, planner_stream_output)
             
             # Run planner agent
-            agent = planner_agent(model_preference=ctx.deps.model_preference)
+            agent = await planner_agent(model_preference=ctx.deps.model_preference)
             planner_response = await agent.run(user_prompt=task)
 
             logfire.info(f"Planner Agent using model type: {ctx.deps.model_preference}")
@@ -286,7 +286,7 @@ async def orchestrator_agent(model_preference: str) -> Agent:
             )
 
             # Run coder agent
-            agent = coder_agent(model_preference=ctx.deps.model_preference)
+            agent = await coder_agent(model_preference=ctx.deps.model_preference)
             coder_response = await agent.run(
                 user_prompt=task,
                 deps=deps_for_coder_agent
@@ -475,7 +475,8 @@ async def orchestrator_agent(model_preference: str) -> Agent:
                     
                     # We'll directly call planner_agent.run() to create a new plan first
                     plan_prompt = f"Create a simple task plan based on this completed task: {completed_task}"
-                    agent = planner_agent(model_preference=ctx.deps.model_preference)
+                    
+                    agent = await planner_agent(model_preference=ctx.deps.model_preference)
                     plan_response = await agent.run(user_prompt=plan_prompt)
                     current_content = plan_response.data.plan
 
@@ -501,7 +502,7 @@ async def orchestrator_agent(model_preference: str) -> Agent:
                 planner_stream_output.steps.append("Asking planner to update the plan...")
                 await _safe_websocket_send(ctx.deps.websocket, planner_stream_output)
                 
-                agent = planner_agent(model_preference=ctx.deps.model_preference)
+                agent = await planner_agent(model_preference=ctx.deps.model_preference)
                 updated_plan_response = await agent.run(user_prompt=update_prompt)
                 updated_plan = updated_plan_response.data.plan
 
@@ -544,7 +545,8 @@ async def orchestrator_agent(model_preference: str) -> Agent:
             
             return f"Failed to update plan: {error_msg}"
     
-    logfire.info("All tools initialized for orchestrator agent")   
+    logfire.info("All tools initialized for orchestrator agent")
+    print(f"[ORCH_INIT] Orchestrator agent initialized successfully: {orchestrator_agent}")
     return orchestrator_agent
 
 

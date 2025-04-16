@@ -154,12 +154,3 @@ async def stream_session(
         logger.error(f"Error in /stream: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/api/v1/model/preference")
-async def get_model_preference():
-    """Get the current model preference"""
-    try:
-        # Get model preference from environment or use default
-        model_preference = os.getenv("MODEL_PREFERENCE", "Anthropic")
-        return {"model_preference": model_preference}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))

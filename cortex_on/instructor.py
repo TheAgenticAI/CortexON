@@ -28,7 +28,7 @@ load_dotenv()
 print("[INIT] Loading agents...")
 print(f"[INIT] Planner agent loaded: {planner_agent}")
 print(f"[INIT] Coder agent loaded: {coder_agent}")
-print(f"[INIT] Orchestrator agent loaded: {get_orchestrator_agent}")
+print(f"[INIT] Orchestrator agent loaded: {orchestrator_agent}")
 
 class DateTimeEncoder(json.JSONEncoder):
     """Custom JSON encoder that can handle datetime objects"""
@@ -97,7 +97,7 @@ class SystemInstructor:
 
             print("Orchestrator agent running")
             
-            agent = orchestrator_agent(self.model_preference)
+            agent = await orchestrator_agent(self.model_preference)
             orchestrator_response = await agent.run(
                 user_prompt=task,
                 deps=deps_for_orchestrator
