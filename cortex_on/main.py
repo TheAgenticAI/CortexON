@@ -13,12 +13,25 @@ from instructor import SystemInstructor
 # Default model preference is Anthropic
 MODEL_PREFERENCE = "Anthropic"
 
+# Global instructor instance
+instructor = None
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Set default model preference at startup
     app.state.model_preference = MODEL_PREFERENCE
     print(f"[STARTUP] Setting default model preference to: {MODEL_PREFERENCE}")
+    
+    # Initialize the instructor
+    global instructor
+    instructor = SystemInstructor(model_preference=MODEL_PREFERENCE)
+    print("[STARTUP] Instructor initialized")
+    
     yield
+    
+    # Cleanup
+    if instructor:
+        await instructor.shutdown()
 
 
 app: FastAPI = FastAPI(lifespan=lifespan)
@@ -42,21 +55,34 @@ async def get_model_preference() -> str:
 @app.get("/set_model_preference")
 async def set_model_preference(model: str):
     """
-    Set the model preference (Anthropic or OpenAI)
+    Set the model preference (Anthropic or OpenAI) and reinitialize the instructor
     """
     if model not in ["Anthropic", "OpenAI"]:
         print(f"[ERROR] Invalid model preference attempted: {model}")
         return {"error": "Model must be 'Anthropic' or 'OpenAI'"}
+    
     print(f"[SET] Changing model preference from {app.state.model_preference} to {model}")
     app.state.model_preference = model
+    
+    # Reinitialize the instructor with new model preference
+    global instructor
+    if instructor:
+        await instructor.shutdown()
+    instructor = SystemInstructor(model_preference=model)
+    print(f"[SET] Instructor reinitialized with model preference: {model}")
+    
     return {"message": f"Model preference set to {model}"}
 
 async def generate_response(task: str, websocket: Optional[WebSocket] = None, model_preference: str = None):
     if model_preference is None:
         model_preference = app.state.model_preference
     print(f"[GENERATE] Using model preference: {model_preference} for task: {task[:30]}...")
-    orchestrator: SystemInstructor = SystemInstructor(model_preference)
-    return await orchestrator.run(task, websocket)
+    
+    global instructor
+    if not instructor:
+        instructor = SystemInstructor(model_preference=model_preference)
+    
+    return await instructor.run(task, websocket)
 
 @app.get("/agent/chat")
 async def agent_chat(task: str, model_preference: str = Depends(get_model_preference)) -> List:

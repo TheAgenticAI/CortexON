@@ -14,7 +14,9 @@ from agents.web_surfer import WebSurfer
 from utils.stream_response_format import StreamResponse
 from agents.planner_agent import planner_agent, update_todo_status
 from agents.code_agent import coder_agent, CoderAgentDeps
-from utils.ant_client import get_client
+from utils.ant_client import get_client, get_anthropic_model_instance, get_openai_model_instance, get_openai_client
+
+print("[ORCH_INIT] Starting orchestrator agent initialization")
 
 @dataclass
 class orchestrator_deps:
@@ -23,6 +25,7 @@ class orchestrator_deps:
     # Add a collection to track agent-specific streams
     agent_responses: Optional[List[StreamResponse]] = None
     model_preference: str = "Anthropic"
+
 
 orchestrator_system_prompt = """You are an AI orchestrator that manages a team of agents to solve tasks. You have access to tools for coordinating the agents and managing the task flow.
 
@@ -159,17 +162,39 @@ Basic workflow:
    - Format: "Task description (agent_name)"
 """
 
-model = AnthropicModel(
-    model_name=os.environ.get("ANTHROPIC_MODEL_NAME"),
-    anthropic_client=get_client()
-)
+# print("[ORCH_INIT] Getting Anthropic client...")
+# client = get_client()
+# print(f"[ORCH_INIT] Anthropic client obtained: {client}")
 
+print("[ORCH_INIT] Initializing Anthropic model...")
+model = get_anthropic_model_instance()
+
+print(f"[ORCH_INIT] Anthropic model initialized: {model}")
+
+print("Orchestrator agent model initialized without MODEL PREFERENCE")
+
+print("[ORCH_INIT] Creating orchestrator agent...")
 orchestrator_agent = Agent(
     model=model,
     name="Orchestrator Agent",
     system_prompt=orchestrator_system_prompt,
     deps_type=orchestrator_deps
 )
+print("[ORCH_INIT] Orchestrator agent created successfully")
+def orchestrator_agent(model_preference: str):
+    if model_preference == "Anthropic":
+        model = get_anthropic_model_instance()
+    elif model_preference == "OpenAI":
+        model = get_openai_model_instance()
+    else:
+        raise ValueError(f"Unknown model_preference: {model_preference}")
+    print(f"[ORCH_INIT] Creating orchestrator agent with model: {model}")
+    return Agent(
+        model=model,
+        name="Orchestrator Agent",
+        system_prompt=orchestrator_system_prompt,
+        deps_type=orchestrator_deps
+    )
 
 @orchestrator_agent.tool
 async def plan_task(ctx: RunContext[orchestrator_deps], task: str) -> str:
@@ -197,7 +222,10 @@ async def plan_task(ctx: RunContext[orchestrator_deps], task: str) -> str:
         await _safe_websocket_send(ctx.deps.websocket, planner_stream_output)
         
         # Run planner agent
-        planner_response = await planner_agent.run(user_prompt=task)
+        agent = planner_agent(model_preference=ctx.deps.model_preference)
+        planner_response = await agent.run(user_prompt=task)
+
+        logfire.info(f"Planner Agent using model type: {ctx.deps.model_preference}")
         
         # Update planner stream with results
         plan_text = planner_response.data.plan
@@ -253,14 +281,18 @@ async def coder_task(ctx: RunContext[orchestrator_deps], task: str) -> str:
         # Create deps with the new stream_output
         deps_for_coder_agent = CoderAgentDeps(
             websocket=ctx.deps.websocket,
-            stream_output=coder_stream_output
+            stream_output=coder_stream_output,
+            model_preference = ctx.deps.model_preference
         )
 
         # Run coder agent
-        coder_response = await coder_agent.run(
+        agent = coder_agent(model_preference=ctx.deps.model_preference)
+        coder_response = await agent.run(
             user_prompt=task,
             deps=deps_for_coder_agent
         )
+        logfire.info(f"coder_response: {coder_response}")
+        logfire.info(f"Coder Agent using model type: {ctx.deps.model_preference}") 
 
         # Extract response data
         response_data = coder_response.data.content
@@ -313,6 +345,7 @@ async def web_surfer_task(ctx: RunContext[orchestrator_deps], task: str) -> str:
             api_url="http://localhost:8000/api/v1/web/stream",
             model_preference=ctx.deps.model_preference
         )
+        logfire.info(f"web_surfing on model type: {ctx.deps.model_preference}")
         
         # Run WebSurfer with its own stream_output
         success, message, messages = await web_surfer_agent.generate_reply(
@@ -442,7 +475,8 @@ async def planner_agent_update(ctx: RunContext[orchestrator_deps], completed_tas
                 
                 # We'll directly call planner_agent.run() to create a new plan first
                 plan_prompt = f"Create a simple task plan based on this completed task: {completed_task}"
-                plan_response = await planner_agent.run(user_prompt=plan_prompt)
+                agent = planner_agent(model_preference=ctx.deps.model_preference)
+                plan_response = await agent.run(user_prompt=plan_prompt)
                 current_content = plan_response.data.plan
             else:
                 # Read existing todo.md
@@ -488,7 +522,7 @@ async def planner_agent_update(ctx: RunContext[orchestrator_deps], completed_tas
             logfire.error(error_msg, exc_info=True)
             
             planner_stream_output.steps.append(f"Plan update failed: {str(e)}")
-            planner_stream_output.status_code = a500
+            planner_stream_output.status_code = 500
             await _safe_websocket_send(ctx.deps.websocket, planner_stream_output)
             
             return f"Failed to update the plan: {error_msg}"
