@@ -130,7 +130,7 @@ class PlannerResult(BaseModel):
 
 model = AnthropicModel(
     model_name=os.environ.get("ANTHROPIC_MODEL_NAME"),
-    anthropic_client=get_client()
+    provider = "anthropic"
 )
 
 planner_agent = Agent(

@@ -29,10 +29,18 @@ load_dotenv()
 
 
 class DateTimeEncoder(json.JSONEncoder):
-    """Custom JSON encoder that can handle datetime objects"""
+    """Custom JSON encoder that can handle datetime objects and Pydantic models"""
     def default(self, obj):
         if isinstance(obj, datetime):
             return obj.isoformat()
+        if isinstance(obj, BaseModel):
+            # Handle both Pydantic v1 and v2
+            if hasattr(obj, 'model_dump'):
+                return obj.model_dump()
+            elif hasattr(obj, 'dict'):
+                return obj.dict()
+            # Fallback for any other Pydantic structure
+            return {k: v for k, v in obj.__dict__.items() if not k.startswith('_')}
         return super().default(obj)
 
 
@@ -101,6 +109,7 @@ class SystemInstructor:
             logfire.info("Task completed successfully")
             return [json.loads(json.dumps(asdict(i), cls=DateTimeEncoder)) for i in self.orchestrator_response]
         
+        
         except Exception as e:
             error_msg = f"Critical orchestration error: {str(e)}\n{traceback.format_exc()}"
             logfire.error(error_msg)
@@ -112,7 +121,12 @@ class SystemInstructor:
                 await self._safe_websocket_send(stream_output)
             
             # Even in case of critical error, return what we have
-            return [asdict(i) for i in self.orchestrator_response]
+            try:
+                return [json.loads(json.dumps(asdict(i), cls=DateTimeEncoder)) for i in self.orchestrator_response]
+            except Exception as serialize_error:
+                logfire.error(f"Failed to serialize response: {str(serialize_error)}")
+                # Last resort - return a simple error message
+                return [{"error": error_msg, "status_code": 500}]
 
         finally:
             logfire.info("Orchestration process complete")

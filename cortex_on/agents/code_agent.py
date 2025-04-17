@@ -239,7 +239,7 @@ async def send_stream_update(ctx: RunContext[CoderAgentDeps], message: str) -> N
 # Initialize the model
 model = AnthropicModel(
     model_name=os.environ.get("ANTHROPIC_MODEL_NAME"),
-    anthropic_client=get_client()
+    provider = "anthropic"
 )
 
 # Initialize the agent
