@@ -1,6 +1,7 @@
 # Standard library imports
 import json
 import os
+import asyncio
 import traceback
 from dataclasses import asdict
 from datetime import datetime
@@ -29,10 +30,18 @@ load_dotenv()
 
 
 class DateTimeEncoder(json.JSONEncoder):
-    """Custom JSON encoder that can handle datetime objects"""
+    """Custom JSON encoder that can handle datetime objects and Pydantic models"""
     def default(self, obj):
         if isinstance(obj, datetime):
             return obj.isoformat()
+        if isinstance(obj, BaseModel):
+            # Handle both Pydantic v1 and v2
+            if hasattr(obj, 'model_dump'):
+                return obj.model_dump()
+            elif hasattr(obj, 'dict'):
+                return obj.dict()
+            # Fallback for any other Pydantic structure
+            return {k: v for k, v in obj.__dict__.items() if not k.startswith('_')}
         return super().default(obj)
 
 
@@ -88,18 +97,20 @@ class SystemInstructor:
             await self._safe_websocket_send(stream_output)
             stream_output.steps.append("Agents initialized successfully")
             await self._safe_websocket_send(stream_output)
-
-            orchestrator_response = await orchestrator_agent.run(
-                user_prompt=task,
-                deps=deps_for_orchestrator
-            )
-            stream_output.output = orchestrator_response.data
+            
+            async with orchestrator_agent.run_mcp_servers():
+                orchestrator_response = await orchestrator_agent.run(
+                    user_prompt=task,
+                    deps=deps_for_orchestrator
+                )
+            stream_output.output = orchestrator_response.output
             stream_output.status_code = 200
-            logfire.debug(f"Orchestrator response: {orchestrator_response.data}")
+            logfire.debug(f"Orchestrator response: {orchestrator_response.output}")
             await self._safe_websocket_send(stream_output)
 
             logfire.info("Task completed successfully")
             return [json.loads(json.dumps(asdict(i), cls=DateTimeEncoder)) for i in self.orchestrator_response]
+        
         
         except Exception as e:
             error_msg = f"Critical orchestration error: {str(e)}\n{traceback.format_exc()}"
@@ -112,7 +123,12 @@ class SystemInstructor:
                 await self._safe_websocket_send(stream_output)
             
             # Even in case of critical error, return what we have
-            return [asdict(i) for i in self.orchestrator_response]
+            try:
+                return [json.loads(json.dumps(asdict(i), cls=DateTimeEncoder)) for i in self.orchestrator_response]
+            except Exception as serialize_error:
+                logfire.error(f"Failed to serialize response: {str(serialize_error)}")
+                # Last resort - return a simple error message
+                return [{"error": error_msg, "status_code": 500}]
 
         finally:
             logfire.info("Orchestration process complete")
