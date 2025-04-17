@@ -164,7 +164,7 @@ Basic workflow:
 server = MCPServerHTTP(url="http://localhost:3001/sse")
 
 model = AnthropicModel(
-    model_name=os.environ.get("ANTHROPIC_MODEL_NAME"), anthropic_client=get_client()
+    model_name=os.environ.get("ANTHROPIC_MODEL_NAME"), provider = "anthropic"
 )
 
 orchestrator_agent = Agent(
