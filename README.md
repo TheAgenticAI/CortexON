@@ -49,6 +49,7 @@ Together, these agents dynamically coordinate, combining their unique capabiliti
 ---
 
 ## Key Capabilities
+
 - Advanced, context-aware research automation
 - Dynamic multi-agent orchestration
 - Seamless integration with third-party APIs and services
@@ -61,6 +62,7 @@ Together, these agents dynamically coordinate, combining their unique capabiliti
 ## Technical Stack
 
 CortexON is built using:
+
 - **Framework:** PydanticAI multi-agent framework
 - **Headless Browser:** Browserbase (Web Agent)
 - **Search Engine:** Google SERP
@@ -77,29 +79,41 @@ CortexON is built using:
 Create a `.env` file with the following required variables:
 
 #### Anthropic API
+
 - `ANTHROPIC_MODEL_NAME=claude-3-7-sonnet-20250219`
 - `ANTHROPIC_API_KEY=your_anthropic_api_key`
 
 Obtain your API key from [Anthropic Console](https://console.anthropic.com).
 
+#### OpenAI API (Required for Deep Research Agent)
+
+- `OPENAI_MODEL_NAME=gpt-4.1`
+- `OPENAI_API_KEY=your_openai_api_key`
+
+Obtain your API key from [OpenAI Console](https://platform.openai.com/api-keys).
+
 #### Browserbase Configuration
+
 - `BROWSERBASE_API_KEY=your_browserbase_api_key`
 - `BROWSERBASE_PROJECT_ID=your_browserbase_project_id`
 
 Set up your account and project at [Browserbase](https://browserbase.com).
 
 #### Google Custom Search
+
 - `GOOGLE_API_KEY=your_google_api_key`
 - `GOOGLE_CX=your_google_cx_id`
 
 Follow the steps at [Google Custom Search API](https://developers.google.com/custom-search/v1/overview).
 
 #### Logging
+
 - `LOGFIRE_TOKEN=your_logfire_token`
 
 Create your token at [LogFire](https://pydantic.dev/logfire).
 
 #### Vault Integration(OPTIONAL)
+
 - `VITE_APP_API_BASE_URL=http://localhost:8000`
 - `VITE_APP_VA_NAMESPACE=your_unique_namespace_id` (format unrestricted, UUID recommended)
 - `VA_TOKEN=your_vault_authentication_token`
@@ -110,27 +124,29 @@ Create your token at [LogFire](https://pydantic.dev/logfire).
 This project uses HashiCorp Cloud Platform (HCP) Vault for secure secrets management. While you can either self-host Vault or use HCP Vault, we recommend using HCP Vault for the best managed experience. For HCP Vault Dedicated cluster setup, follow the [official HashiCorp documentation](https://developer.hashicorp.com/vault/tutorials/get-started-hcp-vault-dedicated/create-cluster).
 
 #### WebSocket
+
 - `VITE_WEBSOCKET_URL=ws://localhost:8081/ws`
 
 ### Docker Setup
 
 1. Clone the CortexON repository:
+
 ```sh
 git clone https://github.com/TheAgenticAI/CortexOn.git
 cd CortexOn
 ```
 
 2. Setup environment variables
-
 3. **Docker Desktop Users (Optional)**: Enable host networking in Docker Desktop settings ([Guide](https://docs.docker.com/engine/network/drivers/host/)).
-
 4. Build and run the Docker containers:
+
 ```sh
 docker-compose build
 docker-compose up
 ```
 
 ### Access Services
+
 - **Frontend:** [http://localhost:3000](http://localhost:3000)
 - **CortexON Backend:** [http://localhost:8081](http://localhost:8081) | API Docs: [http://localhost:8081/docs](http://localhost:8081/docs)
 - **Agentic Browser:** [http://localhost:8000](http://localhost:8000) | API Docs: [http://localhost:8000/docs](http://localhost:8000/docs)

@@ -248,7 +248,8 @@ coder_agent = Agent(
     name="Coder Agent",
     result_type=CoderResult,
     deps_type=CoderAgentDeps,
-    system_prompt=coder_system_message
+    system_prompt=coder_system_message,
+    retries=3
 )
 
 @coder_agent.tool

@@ -9,11 +9,13 @@ import logfire
 from fastapi import WebSocket
 from dotenv import load_dotenv
 from pydantic_ai.models.anthropic import AnthropicModel
+from pydantic_ai.usage import UsageLimits
 from pydantic_ai import Agent, RunContext
 from agents.web_surfer import WebSurfer
 from utils.stream_response_format import StreamResponse
 from agents.planner_agent import planner_agent
 from agents.code_agent import coder_agent, CoderAgentDeps
+from agents.deep_research_agent import deep_research_agent, deep_research_deps
 from utils.ant_client import get_client
 
 @dataclass
@@ -34,21 +36,35 @@ orchestrator_system_prompt = """You are an AI orchestrator that manages a team o
    - Implements technical solutions
    - Executes code operations
 
+3. deep_research_agent:
+   - Conducts comprehensive research on any topic
+   - Performs iterative searches to gather in-depth information
+   - Synthesizes findings into detailed reports with citations
+   - Excellent for tasks requiring thorough investigation and analysis
+
 [MANDATORY WORKFLOW]
 1. On receiving task:
    IF task involves login/credentials/authentication:
    - Route to planner with authentication focus
    - Ensure plan includes web_surfer_agent credential access
    
+   IF task involves comprehensive research or in-depth information gathering:
+   - Consider using deep_research_agent for thorough investigation
+   
 2. During planning (plan_task):
    - Allow authentication operations
    - Never reject credential-related tasks
+   - Identify research-intensive tasks for deep_research_agent
    
 3. During execution:
    FOR authentication tasks:
    - Delegate to web_surfer_agent
    - Use vault system
    
+   FOR deep research tasks:
+   - Delegate to deep_research_agent
+   - Allow sufficient time for thorough investigation
+
 4. Error handling:
    IF authentication fails:
    - Report specific error
@@ -68,8 +84,9 @@ orchestrator_system_prompt = """You are an AI orchestrator that manages a team o
 Basic worflow:
 1. Receive a task from the user.
 2. Plan the task by calling the planner agent through plan task
-3. Assign coding tasks to the coder agent through coder task if plan requeires coding
-or Assign web surfing tasks to the web surfer agent through web_surfer_task if plan requires web surfing
+3. Assign coding tasks to the coder agent through coder task if plan requires coding
+   or Assign web surfing tasks to the web surfer agent through web_surfer_task if plan requires web surfing
+   or Assign deep research tasks to the deep research agent through deep_research_task if plan requires comprehensive research
 4. Continue step 3 if required by the plan
 5. Return the final result to the user
 """
@@ -254,6 +271,89 @@ async def web_surfer_task(ctx: RunContext[orchestrator_deps], task: str) -> str:
         web_surfer_stream_output.status_code = 500
         await _safe_websocket_send(ctx.deps.websocket, web_surfer_stream_output)
         return f"Failed to assign web surfing task: {error_msg}"
+
+@orchestrator_agent.tool
+async def deep_research_task(ctx: RunContext[orchestrator_deps], task: str) -> str:
+    """Assigns deep research tasks to the deep research agent"""
+    try:
+        logfire.info(f"Starting deep research: {task}")
+        
+        # Create a new StreamResponse for Deep Research Agent
+        research_stream_output = StreamResponse(
+            agent_name="Deep Research Agent",
+            instructions=task,
+            steps=[],
+            output="",
+            status_code=0
+        )
+        
+        # Add to orchestrator's response collection if available
+        if ctx.deps.agent_responses is not None:
+            ctx.deps.agent_responses.append(research_stream_output)
+            
+        # Send initial update for Deep Research Agent
+        await _safe_websocket_send(ctx.deps.websocket, research_stream_output)
+        
+        # Update deep research stream
+        research_stream_output.steps.append("Initializing deep research...")
+        await _safe_websocket_send(ctx.deps.websocket, research_stream_output)
+        
+        # Setup storage path for this research
+        import uuid
+        research_id = str(uuid.uuid4())
+        base_dir = os.path.abspath(os.path.dirname(__file__))
+        storage_path = os.path.join(base_dir, "research_data", research_id)
+        os.makedirs(storage_path, exist_ok=True)
+        
+        # Create deps for deep research agent
+        deps_for_research_agent = deep_research_deps(
+            websocket=ctx.deps.websocket,
+            stream_output=research_stream_output,
+            storage_path=storage_path
+        )
+        
+        usage_limits=UsageLimits(
+            request_limit=150,         
+        )
+        
+        # Run deep research agent
+        research_response = await deep_research_agent.run(
+            user_prompt=task,
+            deps=deps_for_research_agent,
+            usage_limits=usage_limits
+        )
+        
+        # Extract response data, handle both dict and string return types
+        if hasattr(research_response.data, 'report'):
+            research_report = research_response.data.report
+        elif isinstance(research_response.data, dict) and 'report' in research_response.data:
+            research_report = research_response.data['report']
+        else:
+            research_report = str(research_response.data)
+        
+        # Update research_stream_output with results
+        research_stream_output.output = research_report
+        research_stream_output.status_code = 200
+        research_stream_output.steps.append("Deep research completed successfully")
+        await _safe_websocket_send(ctx.deps.websocket, research_stream_output)
+        
+        return research_report
+    except Exception as e:
+        error_msg = f"Error performing deep research: {str(e)}"
+        logfire.error(error_msg, exc_info=True)
+        
+        # Update research_stream_output with error
+        if research_stream_output:
+            research_stream_output.steps.append(f"Deep research failed: {str(e)}")
+            research_stream_output.status_code = 500
+            await _safe_websocket_send(ctx.deps.websocket, research_stream_output)
+            
+        # Also update orchestrator stream
+        if ctx.deps.stream_output:
+            ctx.deps.stream_output.steps.append(f"Deep research failed: {str(e)}")
+            await _safe_websocket_send(ctx.deps.websocket, ctx.deps.stream_output)
+            
+        return f"Failed to perform deep research: {error_msg}"
 
 # Helper function for sending WebSocket messages
 async def _safe_websocket_send(websocket: Optional[WebSocket], message: Any) -> bool:

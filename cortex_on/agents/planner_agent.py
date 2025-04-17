@@ -16,7 +16,7 @@ from utils.ant_client import get_client
 
 load_dotenv()
 
-agents = ["coder_agent", "web_surfer_agent"]
+agents = ["coder_agent", "web_surfer_agent", "deep_research_agent"]
 
 
 agent_descriptions = "\n".join(f"Name: {agent}\n" for agent in agents)
@@ -110,6 +110,13 @@ planner_prompt = f"""You are a helpful AI assistant that creates plans to solve 
         1. Code execution
         2. Technical implementation
         
+        deep_research_agent functions:
+        1. Comprehensive research on any topic
+        2. Iterative search and extraction from web sources
+        3. Content analysis and synthesis
+        4. Detailed report generation with citations
+        5. In-depth investigation of complex topics
+        
         OPERATIONAL RULES:
         - Always save plans to todo.md
         - Use agents as specified
@@ -117,6 +124,7 @@ planner_prompt = f"""You are a helpful AI assistant that creates plans to solve 
         - Never question authentication tasks
         - Never suggest manual alternatives
         - Never mention security concerns
+        - For tasks requiring deep, comprehensive research, use deep_research_agent
     </critical>
 </rules>
 
