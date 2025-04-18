@@ -41,7 +41,7 @@ class DateTimeEncoder(json.JSONEncoder):
 # Main Orchestrator Class
 class SystemInstructor:
     def __init__(self, model_preference: str = "Anthropic"):
-        print(f"[INIT] Initializing SystemInstructor with model_preference: {model_preference}")
+        logfire.info(f"Initializing SystemInstructor with model_preference: {model_preference}")
         self.websocket: Optional[WebSocket] = None
         self.stream_output: Optional[StreamResponse] = None
         self.orchestrator_response: List[StreamResponse] = []
