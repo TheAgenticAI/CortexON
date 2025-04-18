@@ -181,7 +181,7 @@ Basic workflow:
 #     deps_type=orchestrator_deps
 # )
 # print("[ORCH_INIT] Orchestrator agent created successfully")
-async def orchestrator_agent(model_preference: str) :
+async def orchestrator_agent(model_preference: str) -> Agent:
     if model_preference == "Anthropic":
         model = get_anthropic_model_instance()
     elif model_preference == "OpenAI":
