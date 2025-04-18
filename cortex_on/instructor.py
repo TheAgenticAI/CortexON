@@ -128,14 +128,16 @@ class SystemInstructor:
 
         finally:
             logfire.info("Orchestration process complete")
-            # Clear any sensitive data
+            
+
     async def shutdown(self):
         """Clean shutdown of orchestrator"""
         try:
-            # Close websocket if open
-            if self.websocket:
-                await self.websocket.close()
-            
+            #Close websocket if open
+            # if self.websocket:
+            #     await self.websocket.close()
+            # logfire.info("websocket shutdown complete")
+            # print("websocket shutdown complete")
             # Clear all responses
             self.orchestrator_response = []
             

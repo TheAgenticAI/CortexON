@@ -95,7 +95,16 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     model_preference = app.state.model_preference
     print(f"[WEBSOCKET] New connection using model preference: {model_preference}")
-    while True:
-        data = await websocket.receive_text()
-        print(f"[WEBSOCKET] Received message, using model: {model_preference}")
-        await generate_response(data, websocket, model_preference)
+    try:
+        while True:
+            try:
+                data = await websocket.receive_text()
+                print(f"[WEBSOCKET] Received message, using model: {model_preference}")
+                await generate_response(data, websocket, model_preference)
+            except Exception as e:
+                print(f"[WEBSOCKET] Error handling message: {str(e)}")
+                break
+    except Exception as e:
+        print(f"[WEBSOCKET] Connection error: {str(e)}")
+    finally:
+        print("[WEBSOCKET] connection closed")
