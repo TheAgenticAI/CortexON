@@ -11,6 +11,7 @@ from pydantic_ai.models.anthropic import AnthropicModel
 
 # Local application imports
 from utils.ant_client import get_client
+from utils.client_initializer import initialize_client
 
 
 
@@ -128,10 +129,8 @@ Available agents:
 class PlannerResult(BaseModel):
     plan: str = Field(description="The generated plan in a string format")
 
-model = AnthropicModel(
-    model_name=os.environ.get("ANTHROPIC_MODEL_NAME"),
-    anthropic_client=get_client()
-)
+# Initialize the model
+model, provider = initialize_client()
 
 planner_agent = Agent(
     model=model,
