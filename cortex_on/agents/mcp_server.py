@@ -53,7 +53,7 @@ async def web_surf_task(task: str) -> str:
 
 def run_server():
     """Run the MCP server"""
-    server.run(port=3001)
+    server.run()
 
 
 if __name__ == "__main__":

@@ -9,13 +9,14 @@ import logfire
 from fastapi import WebSocket
 from dotenv import load_dotenv
 from pydantic_ai.models.anthropic import AnthropicModel
+from pydantic_ai.providers.anthropic import AnthropicProvider
 from pydantic_ai import Agent, RunContext
-from pydantic_ai.mcp import MCPServerHTTP
+from pydantic_ai.mcp import MCPServerHTTP, MCPServerStdio
 from utils.stream_response_format import StreamResponse
 from agents.planner_agent import planner_agent
 from agents.code_agent import coder_agent, CoderAgentDeps
 from utils.ant_client import get_client
-
+load_dotenv()
 
 @dataclass
 class orchestrator_deps:
@@ -76,11 +77,15 @@ or Assign web surfing tasks to the web surfer agent through web_surfer_task if p
 5. Return the final result to the user
 """
 
-# Initialize single MCP server
-server = MCPServerHTTP(url="http://localhost:3001/sse")
+# Initialize MCP Server
+server = MCPServerStdio('python', ["-m", "agents.mcp_server"])
+
+# Initialize Anthropic provider with API key
+provider = AnthropicProvider(api_key=os.environ.get("ANTHROPIC_API_KEY"))
 
 model = AnthropicModel(
-    model_name=os.environ.get("ANTHROPIC_MODEL_NAME"), provider = "anthropic"
+    model_name=os.environ.get("ANTHROPIC_MODEL_NAME"),
+    provider=provider
 )
 
 orchestrator_agent = Agent(

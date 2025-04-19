@@ -1,6 +1,7 @@
 # Standard library imports
 import json
 import os
+import asyncio
 import traceback
 from dataclasses import asdict
 from datetime import datetime
@@ -96,11 +97,12 @@ class SystemInstructor:
             await self._safe_websocket_send(stream_output)
             stream_output.steps.append("Agents initialized successfully")
             await self._safe_websocket_send(stream_output)
-
-            orchestrator_response = await orchestrator_agent.run(
-                user_prompt=task,
-                deps=deps_for_orchestrator
-            )
+            
+            async with orchestrator_agent.run_mcp_servers():
+                orchestrator_response = await orchestrator_agent.run(
+                    user_prompt=task,
+                    deps=deps_for_orchestrator
+                )
             stream_output.output = orchestrator_response.data
             stream_output.status_code = 200
             logfire.debug(f"Orchestrator response: {orchestrator_response.data}")
