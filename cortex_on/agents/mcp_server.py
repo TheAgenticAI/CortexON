@@ -9,7 +9,7 @@ from agents.web_surfer import WebSurfer
 import logfire
 
 # Initialize the single MCP server
-server = FastMCP("CortexON MCP Server")
+server = FastMCP("CortexON MCP Server", host="0.0.0.0", port=3001)
 
 
 @server.tool()
@@ -53,7 +53,7 @@ async def web_surf_task(task: str) -> str:
 
 def run_server():
     """Run the MCP server"""
-    server.run()
+    server.run(transport="sse")
 
 
 if __name__ == "__main__":

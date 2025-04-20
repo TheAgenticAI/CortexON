@@ -18,6 +18,13 @@ RUN uv pip install --system --no-cache-dir -r requirements.txt
 
 COPY . .
 
-EXPOSE 8081
+# Set environment variables
+ENV PYTHONPATH=/app
+ENV ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+ENV ANTHROPIC_MODEL_NAME=${ANTHROPIC_MODEL_NAME:-claude-3-sonnet-20240229}
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8081"]
+EXPOSE 8081
+EXPOSE 3001
+
+# Run both the MCP server and the main API
+CMD ["sh", "-c", "python -m agents.mcp_server & uvicorn main:app --host 0.0.0.0 --port 8081"]
