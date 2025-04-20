@@ -162,7 +162,8 @@ Basic workflow:
 """
 
 # Initialize MCP Server
-server = MCPServerStdio('python', ["-m", "agents.mcp_server"])
+# server = MCPServerStdio('python', ["-m", "agents.mcp_server"])
+server = MCPServerHTTP(url='http://localhost:3001/sse')  
 
 # Initialize Anthropic provider with API key
 provider = AnthropicProvider(api_key=os.environ.get("ANTHROPIC_API_KEY"))
