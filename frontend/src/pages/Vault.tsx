@@ -157,7 +157,8 @@ export const Vault = () => {
           Add, save and manage your passwords.
         </p>
         <p className="text-yellow-500 text-sm">
-          ⚠️ Vault is an experimental feature. We're working to make it more secure.
+          ⚠️ Vault is an experimental feature. We're working to make it more
+          secure.
         </p>
       </div>
       <div className="flex justify-between items-center gap-4 pr-3">
@@ -173,7 +174,7 @@ export const Vault = () => {
         </div>
         <AddCreds />
       </div>
-      <ScrollArea className="h-[63vh]">
+      <ScrollArea className="h-[60vh]">
         {isLoadingSecrets || isLoadingSecretsList ? (
           <div className="flex flex-col space-y-2 pr-3">
             {[1, 2, 3, 4].map((i) => (

@@ -4,6 +4,7 @@ import {
   ChevronRight,
   Component,
   Globe,
+  Send,
   SquareCode,
   SquareSlash,
   X,
@@ -20,16 +21,12 @@ import {Skeleton} from "../ui/skeleton";
 import {setMessages} from "@/dataStore/messagesSlice";
 import {RootState} from "@/dataStore/store";
 import {getTimeAgo} from "@/lib/utils";
-import {
-  AgentOutput,
-  ChatListPageProps,
-  Message,
-  SystemMessage,
-} from "@/types/chatTypes";
+import {AgentOutput, ChatListPageProps, SystemMessage} from "@/types/chatTypes";
 import {useDispatch, useSelector} from "react-redux";
 import useWebSocket, {ReadyState} from "react-use-websocket";
 import {Button} from "../ui/button";
 import {Card} from "../ui/card";
+import {Textarea} from "../ui/textarea";
 import {CodeBlock} from "./CodeBlock";
 import {ErrorAlert} from "./ErrorAlert";
 import LoadingView from "./Loading";
@@ -42,72 +39,80 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
   const [isIframeLoading, setIsIframeLoading] = useState<boolean>(true);
   const [liveUrl, setLiveUrl] = useState<string>("");
   const [animateIframeEntry, setAnimateIframeEntry] = useState<boolean>(false);
-  // Modify your outputs state to use a map structure for better tracking
   const [outputsList, setOutputsList] = useState<AgentOutput[]>([]);
   const [currentOutput, setCurrentOutput] = useState<number | null>(null);
-  // Add animation state for output panel
   const [animateOutputEntry, setAnimateOutputEntry] = useState<boolean>(false);
+  const [rows, setRows] = useState(4);
+  const [animateSubmit, setAnimateSubmit] = useState<boolean>(false);
 
-  // Create a ref for the scroll container
+  const [humanInputValue, setHumanInputValue] = useState<string>("");
+
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const messages = useSelector(
     (state: RootState) => state.messagesState.messages
   );
   const dispatch = useDispatch();
 
-  // Create another ref to track the previous messages length
   const prevMessagesLengthRef = useRef(0);
   const prevSystemMessageLengthRef = useRef(0);
+
+  const adjustHeight = () => {
+    if (!textareaRef.current) return;
+
+    // Reset to minimum height
+    textareaRef.current.style.height = "auto";
+
+    // Get the scroll height
+    const scrollHeight = textareaRef.current.scrollHeight;
+
+    // Calculate how many rows that would be (approx 24px per row)
+    const calculatedRows = Math.ceil(scrollHeight / 24);
+
+    // Limit to between 4 and 12 rows
+    const newRows = Math.max(4, Math.min(12, calculatedRows));
+
+    setRows(newRows);
+  };
 
   const {sendMessage, lastJsonMessage, readyState} = useWebSocket(
     VITE_WEBSOCKET_URL,
     {
       onOpen: () => {
-        if (
-          messages.length > 0 &&
-          messages[0]?.prompt &&
-          messages[0].prompt.length > 0
-        ) {
+        if (messages.length > 0 && messages[0]?.prompt) {
           sendMessage(messages[0].prompt);
         }
       },
-      onError: (error) => {
+      onError: () => {
         setIsLoading(false);
       },
-      onClose: (event) => {
+      onClose: () => {
         setIsLoading(false);
-      },
-      onMessage: (event) => {
-        // Keep this for debugging critical issues
-        console.log("[WebSocket Debug] Received message:", event.data);
       },
       reconnectAttempts: 3,
       retryOnError: true,
-      shouldReconnect: (closeEvent) => true,
+      shouldReconnect: () => true,
       reconnectInterval: 3000,
     }
   );
 
   const scrollToBottom = (smooth = true) => {
     if (scrollAreaRef.current) {
-      // Get the actual scrollable div inside the ScrollArea component
       const scrollableDiv = scrollAreaRef.current.querySelector(
         "[data-radix-scroll-area-viewport]"
       );
       if (scrollableDiv) {
-        // Find the last message element to scroll to
         const lastMessageElement = scrollAreaRef.current.querySelector(
           ".space-y-4 > div:last-child"
         );
 
         if (lastMessageElement) {
-          // Use scrollIntoView for smooth scrolling behavior
           lastMessageElement.scrollIntoView({
             behavior: smooth ? "smooth" : "auto",
             block: "end",
           });
         } else {
-          // Fallback to traditional scrollTop if element not found
           scrollableDiv.scrollTo({
             top: scrollableDiv.scrollHeight,
             behavior: smooth ? "smooth" : "auto",
@@ -125,16 +130,11 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
       setIsLoading(true);
 
       const lastMessageData = lastMessage.data || [];
-      const {
-        agent_name,
-        instructions,
-        steps,
-        output,
-        status_code,
-        live_url,
-      } = lastJsonMessage as SystemMessage;
+      const {agent_name, instructions, steps, output, status_code, live_url} =
+        lastJsonMessage as SystemMessage;
 
-      // Update live URL if provided
+      console.log(lastJsonMessage);
+
       if (live_url && liveUrl.length === 0) {
         setCurrentOutput(null);
         setTimeout(() => {
@@ -146,7 +146,6 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
         setLiveUrl("");
       }
 
-      // Find the agent name in the last message data and update the fields
       const agentIndex = lastMessageData.findIndex(
         (agent: SystemMessage) => agent.agent_name === agent_name
       );
@@ -186,38 +185,36 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
         ];
       }
 
-      if (output && output.length > 0 && agent_name !== "Web Surfer") {
-        // Only mark as complete for Orchestrator
+      if (
+        output &&
+        output.length > 0 &&
+        agent_name !== "Web Surfer" &&
+        agent_name !== "Human Input"
+      ) {
         if (agent_name === "Orchestrator") {
           setIsLoading(false);
         }
 
         if (status_code === 200) {
           setOutputsList((prevList) => {
-            // Check if this agent already has an output
             const existingIndex = prevList.findIndex(
               (item) => item.agent === agent_name
             );
 
             let newList;
-            let newOutputIndex; // Track the index of the new/updated output
+            let newOutputIndex;
 
             if (existingIndex >= 0) {
-              // Update existing output
               newList = [...prevList];
               newList[existingIndex] = {agent: agent_name, output};
               newOutputIndex = existingIndex;
             } else {
-              // Add new output
               newList = [...prevList, {agent: agent_name, output}];
               newOutputIndex = newList.length - 1;
             }
 
-            // Always set the most recent output as current
-            // Use setTimeout to ensure state updates properly
             setAnimateOutputEntry(false);
 
-            // After a short delay, change the output and trigger entry animation
             setTimeout(() => {
               setCurrentOutput(newOutputIndex);
               setAnimateOutputEntry(true);
@@ -228,7 +225,17 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
         }
       }
 
-      // Create a new array to ensure state update
+      if (agent_name === "Human Input") {
+        if (output && output.length > 0) {
+          setIsLoading(true);
+        } else {
+          setIsLoading(false);
+        }
+        setTimeout(() => {
+          setCurrentOutput(null);
+        }, 300);
+      }
+
       const updatedMessages = [
         ...messages.slice(0, messages.length - 1),
         {
@@ -237,7 +244,6 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
         },
       ];
 
-      // Only dispatch if the messages have actually changed
       if (JSON.stringify(updatedMessages) !== JSON.stringify(messages)) {
         dispatch(setMessages(updatedMessages));
       }
@@ -419,30 +425,23 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
     }
   };
 
-  // Function to handle output selection with animation
   const handleOutputSelection = (index: number) => {
-    // If we're already showing this output, don't do anything
     if (currentOutput === index) return;
 
-    // If we're switching from one output to another, animate the transition
     if (currentOutput !== null) {
-      // Set animation flag to false first (to trigger exit animation)
       setAnimateOutputEntry(false);
 
-      // After a short delay, change the output and trigger entry animation
       setTimeout(() => {
         setCurrentOutput(index);
         setAnimateOutputEntry(true);
-      }, 300); // Match this with CSS transition duration
+      }, 300);
     } else {
-      // If we're showing an output for the first time
       setCurrentOutput(index);
       setAnimateOutputEntry(true);
     }
   };
 
   useEffect(() => {
-    // Only scroll if messages have been added
     const currentMessagesLength = messages.length;
     let shouldScroll = false;
 
@@ -452,7 +451,6 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
       currentMessagesLength > 0 &&
       messages[currentMessagesLength - 1].role === "system"
     ) {
-      // Check if system message data has changed
       const systemMessage = messages[currentMessagesLength - 1];
       const currentSystemDataLength = systemMessage.data?.length || 0;
 
@@ -460,25 +458,19 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
         shouldScroll = true;
       }
 
-      // Update system message data length ref
       prevSystemMessageLengthRef.current = currentSystemDataLength;
     }
 
-    // Update messages length ref
     prevMessagesLengthRef.current = currentMessagesLength;
 
-    // Scroll with a slight delay to ensure content has rendered
     if (shouldScroll) {
       setTimeout(scrollToBottom, 100);
     }
   }, [messages]);
 
-  // Additional useEffect to handle scrolling on initial load
   useEffect(() => {
-    // Initial scroll without smooth behavior for immediate positioning
     scrollToBottom(false);
 
-    // Add window resize listener to maintain scroll position
     const handleResize = () => {
       scrollToBottom(false);
     };
@@ -490,14 +482,12 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
     };
   }, []);
 
-  // Reset iframe animation flag when iframe is hidden
   useEffect(() => {
     if (!liveUrl) {
       setAnimateIframeEntry(false);
     }
   }, [liveUrl]);
 
-  // Reset output animation flag when output is hidden
   useEffect(() => {
     if (currentOutput === null) {
       setAnimateOutputEntry(false);
@@ -507,25 +497,31 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
   window.addEventListener("message", function (event) {
     if (event.data === "browserbase-disconnected") {
       console.log("Message received from iframe:", event.data);
-      // Handle the disconnection logic here
       setLiveUrl("");
     }
   });
 
-  // Calculate width based on whether liveUrl or output is present
   const chatContainerWidth = liveUrl || currentOutput !== null ? "50%" : "65%";
 
-  // Calculate animation classes for output panel
   const outputPanelClasses = `border-2 rounded-xl w-[50%] flex flex-col h-[95%] justify-between items-center transition-all duration-700 ease-in-out ${
     animateOutputEntry
       ? "opacity-100 translate-x-0 animate-fade-in animate-once animate-duration-1000"
       : "opacity-0 translate-x-2"
   }`;
 
+  const handleHumanInputSubmit = () => {
+    if (humanInputValue.trim()) {
+      sendMessage(humanInputValue);
+      setHumanInputValue("");
+      setAnimateSubmit(true);
+      setIsLoading(true);
+    }
+  };
+
   return (
     <div className="w-full h-full flex justify-center items-center px-4 gap-4">
       <div
-        className="h-full flex flex-col items-center space-y-10 pt-8 transition-all duration-500 ease-in-out"
+        className="h-full flex flex-col items-center space-y-4 pt-8 transition-all duration-500 ease-in-out relative"
         style={{width: chatContainerWidth}}
       >
         <ScrollArea className="h-[95%] w-full" ref={scrollAreaRef}>
@@ -610,6 +606,159 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
                                   ))}
                               </div>
                             </div>
+                          ) : systemMessage.agent_name === "Human Input" ? (
+                            <div
+                              className="space-y-5 bg-background mb-4 w-full animate-fade-in animate-once animate-delay-300"
+                              key={index}
+                            >
+                              <div className="transform transition-transform duration-300 hover:scale-105 animate-fade-right animate-once animate-duration-500">
+                                <div className="markdown-container text-base leading-7 break-words p-2">
+                                  <Markdown
+                                    remarkPlugins={[remarkBreaks]}
+                                    rehypePlugins={[rehypeRaw]}
+                                    components={{
+                                      code({className, children, ...props}) {
+                                        return (
+                                          <pre className="code-block">
+                                            <code
+                                              className={className}
+                                              {...props}
+                                            >
+                                              {children}
+                                            </code>
+                                          </pre>
+                                        );
+                                      },
+                                      h1: ({children}) => (
+                                        <h1 className="text-2xl font-bold mt-6 mb-4">
+                                          {children}
+                                        </h1>
+                                      ),
+                                      h2: ({children}) => (
+                                        <h2 className="text-xl font-bold mt-5 mb-3">
+                                          {children}
+                                        </h2>
+                                      ),
+                                      h3: ({children}) => (
+                                        <h3 className="text-lg font-bold mt-4 mb-2">
+                                          {children}
+                                        </h3>
+                                      ),
+                                      h4: ({children}) => (
+                                        <h4 className="text-base font-bold mt-3 mb-2">
+                                          {children}
+                                        </h4>
+                                      ),
+                                      h5: ({children}) => (
+                                        <h5 className="text-sm font-bold mt-3 mb-1">
+                                          {children}
+                                        </h5>
+                                      ),
+                                      h6: ({children}) => (
+                                        <h6 className="text-xs font-bold mt-3 mb-1">
+                                          {children}
+                                        </h6>
+                                      ),
+                                      p: ({children}) => (
+                                        <p className="mb-4">{children}</p>
+                                      ),
+                                      a: ({href, children}) => (
+                                        <a
+                                          href={href}
+                                          className="text-primary hover:underline"
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                        >
+                                          {children}
+                                        </a>
+                                      ),
+                                      ul: ({children}) => (
+                                        <ul className="list-disc pl-6 mb-4">
+                                          {children}
+                                        </ul>
+                                      ),
+                                      ol: ({children}) => (
+                                        <ol className="list-decimal pl-6 mb-4">
+                                          {children}
+                                        </ol>
+                                      ),
+                                      li: ({children}) => (
+                                        <li className="mb-2">{children}</li>
+                                      ),
+                                    }}
+                                  >
+                                    {systemMessage.instructions}
+                                  </Markdown>
+                                </div>
+                              </div>
+                              {systemMessage.output &&
+                              systemMessage.output.length > 0 ? (
+                                <div className="flex flex-col justify-end items-end space-y-1 animate-fade-in animate-once animate-duration-300 animate-ease-in-out">
+                                  <div
+                                    className="bg-secondary text-secondary-foreground text-right rounded-lg p-3 break-words 
+                    max-w-[80%] min-w-[10%] transform transition-all duration-300 hover:shadow-md hover:-translate-y-1 animate-fade-right animate-once animate-duration-500"
+                                  >
+                                    {systemMessage.output}
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="relative w-[100%] transition-all duration-300 hover:scale-[1.01] focus-within:scale-[1.01]">
+                                  <Textarea
+                                    ref={textareaRef}
+                                    draggable={false}
+                                    placeholder="Please enter your input here..."
+                                    rows={rows}
+                                    value={humanInputValue}
+                                    onChange={(e) => {
+                                      setHumanInputValue(e.target.value);
+                                      adjustHeight();
+                                    }}
+                                    className={`w-full max-h-[20vh] focus:shadow-lg resize-none pb-5 transition-all duration-300 ${
+                                      humanInputValue
+                                        ? "border-primary border-2"
+                                        : "border"
+                                    }`}
+                                    style={{
+                                      overflowY: rows >= 12 ? "auto" : "hidden",
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter") {
+                                        if (e.shiftKey) {
+                                          // Shift+Enter - insert a new line
+                                          setHumanInputValue(
+                                            (prev) => prev + "\n"
+                                          );
+                                        } else {
+                                          // Just Enter - submit the form
+                                          e.preventDefault(); // Prevent default newline behavior
+                                          if (humanInputValue.length > 0) {
+                                            handleHumanInputSubmit();
+                                          }
+                                        }
+                                      }
+                                    }}
+                                  />
+                                  {humanInputValue.trim().length > 0 && (
+                                    <Button
+                                      size="icon"
+                                      className={`absolute right-2 top-2 transition-all duration-300 ${
+                                        animateSubmit
+                                          ? "scale-90"
+                                          : "hover:scale-110"
+                                      }`}
+                                      onClick={handleHumanInputSubmit}
+                                    >
+                                      <Send size={20} absoluteStrokeWidth />
+                                    </Button>
+                                  )}
+                                  {humanInputValue.trim().length > 0 && (
+                                    <p className="text-[13px] text-muted-foreground absolute right-3 bottom-3 pointer-events-none animate-fade-in animate-duration-300">
+                                      press shift + enter to go to new line
+                                    </p>
+                                  )}
+                                </div>
+                              )}
+                            </div>
                           ) : (
                             <Card
                               key={index}
@@ -662,7 +811,8 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
                                   )}
                                 {systemMessage.output &&
                                   systemMessage.output.length > 0 &&
-                                  (systemMessage.agent_name !== "Web Surfer" ? (
+                                  (systemMessage.agent_name !== "Web Surfer" &&
+                                  systemMessage.agent_name !== "Human Input" ? (
                                     <div
                                       onClick={() =>
                                         handleOutputSelection(
@@ -695,7 +845,6 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
                             </Card>
                           )
                         )}
-                        {/* Add output of the orchestrator */}
                         {message.data &&
                           message.data.find(
                             (systemMessage) =>
@@ -751,6 +900,46 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
             })}
           </div>
         </ScrollArea>
+
+        {/* Human Input Card */}
+        {/* {humanInputRequest && (
+          <div className="fixed bottom-24 left-0 right-0 flex justify-center items-center z-50">
+            <div className="w-[700px] ml-16">
+              <Card className="bg-background/95 backdrop-blur-sm border shadow-lg">
+                <div className="p-4 space-y-3">
+                  <div className="flex items-center gap-2 text-secondary-foreground">
+                    <Component size={20} className="text-primary" />
+                    <span className="font-medium">Human Input</span>
+                  </div>
+                  <div className="text-secondary-foreground text-base">
+                    {humanInputRequest.question}
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={humanInputValue}
+                      onChange={(e) => setHumanInputValue(e.target.value)}
+                      className="flex-1 px-3 py-2 bg-secondary/80 text-foreground rounded-md border border-primary/20 focus:border-primary focus:ring-1 focus:ring-primary outline-none text-base"
+                      placeholder="Type your response..."
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          handleHumanInputSubmit();
+                        }
+                      }}
+                    />
+                    <Button
+                      onClick={handleHumanInputSubmit}
+                      className="bg-primary hover:bg-primary/90 text-primary-foreground px-6"
+                      size="default"
+                    >
+                      Send
+                    </Button>
+                  </div>
+                </div>
+              </Card>
+            </div>
+          </div>
+        )} */}
       </div>
       {liveUrl && (
         <div
@@ -780,7 +969,7 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
               title="Browser Preview"
               sandbox="allow-scripts allow-same-origin allow-modals allow-forms allow-popups"
               onLoad={() => {
-                setTimeout(() => setIsIframeLoading(false), 300); // Delay to show transition
+                setTimeout(() => setIsIframeLoading(false), 300);
               }}
               onError={(e) => {
                 console.error("Iframe load error:", e);
@@ -793,9 +982,7 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
               }}
             />
           </div>
-          <div className="bg-secondary h-[7vh] flex w-full rounded-b-xl justify-end px-4 animate-fade-up animate-once animate-duration-700">
-            {/* Browser session footer */}
-          </div>
+          <div className="bg-secondary h-[7vh] flex w-full rounded-b-xl justify-end px-4 animate-fade-up animate-once animate-duration-700"></div>
         </div>
       )}
       {outputsList.length > 0 && currentOutput !== null && (
