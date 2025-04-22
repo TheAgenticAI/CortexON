@@ -117,6 +117,7 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
     }
   }, [messages.length]);
 
+
   const scrollToBottom = (smooth = true) => {
     if (scrollAreaRef.current) {
       const scrollableDiv = scrollAreaRef.current.querySelector(
@@ -577,7 +578,7 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
                   className="space-y-2 animate-fade-in animate-once animate-duration-500"
                   key={idx}
                 >
-                  {readyState === ReadyState.CONNECTING && messages.length > 0 ? (
+                  {readyState === ReadyState.CONNECTING && messages.length > 0  ? (
                     <>
                       <Skeleton className="h-[3vh] w-[10%] animate-pulse" />
                       <Skeleton className="h-[2vh] w-[80%] animate-pulse animate-delay-100" />

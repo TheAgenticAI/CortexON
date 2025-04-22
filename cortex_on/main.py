@@ -3,13 +3,12 @@ from typing import List, Optional
 from contextlib import asynccontextmanager
 
 # Third-party imports
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect ,Depends
 from fastapi.middleware.cors import CORSMiddleware
 import logfire
 
 # Local application imports
 from instructor import SystemInstructor
-
 
 # Default model preference is Anthropic
 MODEL_PREFERENCE = "Anthropic"
@@ -22,7 +21,7 @@ async def lifespan(app: FastAPI):
     # Set default model preference at startup
     app.state.model_preference = MODEL_PREFERENCE
     logfire.info(f"Setting default model preference to: {MODEL_PREFERENCE}")
-    
+
     # Initialize the instructor
     global instructor
     instructor = SystemInstructor(model_preference=MODEL_PREFERENCE)
@@ -99,17 +98,15 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         while True:
             try:
-                # Use a timeout to detect if the client is still connected
                 data = await websocket.receive_text()
                 logfire.info(f"Received message, using model: {model_preference}")
                 await generate_response(data, websocket, model_preference)
             except WebSocketDisconnect:
-                print("[WEBSOCKET] Client disconnected")
+                print("Websocket disconnected")
                 break
             except Exception as e:
                 print(f"[WEBSOCKET] Error handling message: {str(e)}")
-                if "disconnect message has been received" in str(e):
-                    print("[WEBSOCKET] Disconnect detected, closing connection")
-                    break
     except Exception as e:
         print(f"[WEBSOCKET] Connection error: {str(e)}")
+    # finally:
+    #     print("[WEBSOCKET] connection closed")

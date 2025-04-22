@@ -16,8 +16,6 @@ from agents.planner_agent import planner_agent
 from agents.code_agent import coder_agent, CoderAgentDeps
 from utils.ant_client import get_client, get_anthropic_model_instance, get_openai_model_instance, get_openai_client
 
-print("[ORCH_INIT] Starting orchestrator agent initialization")
-
 @dataclass
 class orchestrator_deps:
     websocket: Optional[WebSocket] = None
@@ -25,7 +23,6 @@ class orchestrator_deps:
     # Add a collection to track agent-specific streams
     agent_responses: Optional[List[StreamResponse]] = None
     model_preference: str = "Anthropic"
-
 
 orchestrator_system_prompt = """You are an AI orchestrator that manages a team of agents to solve tasks. You have access to tools for coordinating the agents and managing the task flow.
 
@@ -162,25 +159,6 @@ Basic workflow:
    - Format: "Task description (agent_name)"
 """
 
-# print("[ORCH_INIT] Getting Anthropic client...")
-# client = get_client()
-# print(f"[ORCH_INIT] Anthropic client obtained: {client}")
-
-# print("[ORCH_INIT] Initializing Anthropic model...")
-# model = get_anthropic_model_instance()
-
-# print(f"[ORCH_INIT] Anthropic model initialized: {model}")
-
-# print("Orchestrator agent model initialized without MODEL PREFERENCE")
-
-# print("[ORCH_INIT] Creating orchestrator agent...")
-# orchestrator_agent = Agent(
-#     model=model,
-#     name="Orchestrator Agent",
-#     system_prompt=orchestrator_system_prompt,
-#     deps_type=orchestrator_deps
-# )
-# print("[ORCH_INIT] Orchestrator agent created successfully")
 async def orchestrator_agent(model_preference: str) -> Agent:
     if model_preference == "Anthropic":
         model = get_anthropic_model_instance()
@@ -195,7 +173,7 @@ async def orchestrator_agent(model_preference: str) -> Agent:
         system_prompt=orchestrator_system_prompt,
         deps_type=orchestrator_deps
     )
-        
+
     @orchestrator_agent.tool
     async def plan_task(ctx: RunContext[orchestrator_deps], task: str) -> str:
         """Plans the task and assigns it to the appropriate agents"""
@@ -226,7 +204,7 @@ async def orchestrator_agent(model_preference: str) -> Agent:
             planner_response = await agent.run(user_prompt=task)
 
             logfire.info(f"Planner Agent using model type: {ctx.deps.model_preference}")
-            
+                
             # Update planner stream with results
             plan_text = planner_response.data.plan
             planner_stream_output.steps.append("Task planned successfully")
@@ -281,8 +259,7 @@ async def orchestrator_agent(model_preference: str) -> Agent:
             # Create deps with the new stream_output
             deps_for_coder_agent = CoderAgentDeps(
                 websocket=ctx.deps.websocket,
-                stream_output=coder_stream_output,
-                model_preference = ctx.deps.model_preference
+                stream_output=coder_stream_output
             )
 
             # Run coder agent
@@ -293,6 +270,7 @@ async def orchestrator_agent(model_preference: str) -> Agent:
             )
             logfire.info(f"coder_response: {coder_response}")
             logfire.info(f"Coder Agent using model type: {ctx.deps.model_preference}") 
+
 
             # Extract response data
             response_data = coder_response.data.content
@@ -346,7 +324,7 @@ async def orchestrator_agent(model_preference: str) -> Agent:
                 model_preference=ctx.deps.model_preference
             )
             logfire.info(f"web_surfing on model type: {ctx.deps.model_preference}")
-            
+                
             # Run WebSurfer with its own stream_output
             success, message, messages = await web_surfer_agent.generate_reply(
                 instruction=task,
@@ -479,9 +457,8 @@ async def orchestrator_agent(model_preference: str) -> Agent:
                     agent = await planner_agent(model_preference=ctx.deps.model_preference)
                     plan_response = await agent.run(user_prompt=plan_prompt)
                     current_content = plan_response.data.plan
-
                     logfire.info(f"Updating plan task using model type: {ctx.deps.model_preference}")
-                    
+                        
                 else:
                     # Read existing todo.md
                     with open(todo_path, "r") as file:
@@ -502,12 +479,12 @@ async def orchestrator_agent(model_preference: str) -> Agent:
                 planner_stream_output.steps.append("Asking planner to update the plan...")
                 await _safe_websocket_send(ctx.deps.websocket, planner_stream_output)
                 
-                agent = await planner_agent(model_preference=ctx.deps.model_preference)
-                updated_plan_response = await agent.run(user_prompt=update_prompt)
+                updated_plan_response = await planner_agent.run(user_prompt=update_prompt)
                 updated_plan = updated_plan_response.data.plan
+                
 
                 logfire.info(f"Updating prompt for plan task using model type: {ctx.deps.model_preference}")
-                
+                    
                 # Write the updated plan back to todo.md
                 with open(todo_path, "w") as file:
                     file.write(updated_plan)
@@ -529,7 +506,7 @@ async def orchestrator_agent(model_preference: str) -> Agent:
                 logfire.error(error_msg, exc_info=True)
                 
                 planner_stream_output.steps.append(f"Plan update failed: {str(e)}")
-                planner_stream_output.status_code = 500
+                planner_stream_output.status_code = a500
                 await _safe_websocket_send(ctx.deps.websocket, planner_stream_output)
                 
                 return f"Failed to update the plan: {error_msg}"
@@ -544,10 +521,14 @@ async def orchestrator_agent(model_preference: str) -> Agent:
                 await _safe_websocket_send(ctx.deps.websocket, ctx.deps.stream_output)
             
             return f"Failed to update plan: {error_msg}"
-    
+
+
+
     logfire.info("All tools initialized for orchestrator agent")
     print(f"[ORCH_INIT] Orchestrator agent initialized successfully: {orchestrator_agent}")
+
     return orchestrator_agent
+
 
 
 # Helper function for sending WebSocket messages
