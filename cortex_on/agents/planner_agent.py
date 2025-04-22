@@ -176,9 +176,6 @@ Available agents:
 class PlannerResult(BaseModel):
     plan: str = Field(description="The generated or updated plan in string format - this should be the complete plan text")
 
-
-
-
 async def planner_agent(model_preference: str = "Anthropic") -> Agent:
     if model_preference == "Anthropic":
         model = get_anthropic_model_instance()
@@ -351,6 +348,7 @@ async def planner_agent(model_preference: str = "Anthropic") -> Agent:
         except Exception as e:
             logfire.error(f"Error executing command: {str(e)}", exc_info=True)
             return f"Error executing command: {str(e)}"
-        
+
+
     logfire.info("All tools initialized for planner agent")
     return planner_agent
