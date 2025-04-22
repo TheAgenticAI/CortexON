@@ -260,6 +260,7 @@ async def execute_shell(ctx: RunContext[CoderAgentDeps], command: str) -> str:
     """
     try:
         # Extract base command for security checks and messaging
+        print(f"Executing shell command: {command}")
         base_command = command.split()[0] if command.split() else ""
         
         # Send operation description message

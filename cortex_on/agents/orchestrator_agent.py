@@ -532,7 +532,7 @@ async def planner_agent_update(ctx: RunContext[orchestrator_deps], completed_tas
             logfire.error(error_msg, exc_info=True)
             
             planner_stream_output.steps.append(f"Plan update failed: {str(e)}")
-            planner_stream_output.status_code = a500
+            planner_stream_output.status_code = 500
             await _safe_websocket_send(ctx.deps.websocket, planner_stream_output)
             
             return f"Failed to update the plan: {error_msg}"

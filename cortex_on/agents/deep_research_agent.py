@@ -12,7 +12,7 @@ import aiohttp
 from dotenv import load_dotenv
 from fastapi import WebSocket
 import logfire
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.anthropic import AnthropicModel
 
@@ -56,8 +56,17 @@ class TodoItem(BaseModel):
     priority: int = Field(description="Priority of the task (1-5, with 1 being highest)", default=3)
     findings_path: Optional[str] = Field(description="Path to the findings file for this todo item", default=None)
     completion_time: Optional[datetime] = Field(description="When this task was completed", default=None)
-    knowledge_gaps: List[str] = Field(description="Knowledge gaps identified during this task", default_factory=list)
+    knowledge_gaps: Optional[List[str]] = Field(description="Knowledge gaps identified during this task", default_factory=list)
     
+    @model_validator(mode='before')
+    @classmethod
+    def validate_knowledge_gaps(cls, data):
+        if isinstance(data, dict) and 'knowledge_gaps' in data:
+            if isinstance(data['knowledge_gaps'], str) and data['knowledge_gaps']:
+                # If it's a non-empty string, convert to a list with one item
+                data['knowledge_gaps'] = [data['knowledge_gaps']]
+        return data
+
 class ResearchTodo(BaseModel):
     """Model for the research todo list"""
     title: str = Field(description="Title of the research project")
@@ -388,19 +397,22 @@ async def get_current_todo_item(
 @deep_research_agent.tool
 async def mark_todo_item_complete(
     ctx: RunContext[deep_research_deps],
-    item_id: str = '',
-    findings: str = '',
-    knowledge_gaps: list = None,
-    report_section: str = None
+    **kwargs
 ) -> str:
-    """Mark a todo item as complete and store its findings. All parameters except item_id are optional."""
-    # Fallbacks for missing fields
-    if knowledge_gaps is None:
-        knowledge_gaps = []
-    if report_section is None:
-        report_section = None
+    """Mark a todo item as complete and store its findings. Parameters:
+    - item_id: ID of the task to mark as complete
+    - findings: (optional) Research findings text
+    - knowledge_gaps: (optional) List of knowledge gaps identified
+    - report_section: (optional) Section text for the final report
+    """
+    # Extract parameters with defaults
+    item_id = kwargs.get('item_id', '')
+    findings = kwargs.get('findings', '')
+    knowledge_gaps = kwargs.get('knowledge_gaps', [])
+    report_section = kwargs.get('report_section', '')
+    
     try:
-        logfire.info(f"Marking todo item {item_id} as complete")
+        logfire.info(f"Marking todo item {item_id} as complete with params: {kwargs.keys()}")
         
         # Update stream with status
         if ctx.deps.stream_output:

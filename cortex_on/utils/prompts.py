@@ -219,6 +219,8 @@ if the users query does not have the sufficient information then you need to con
 11. store_research_findings: Save important findings for later synthesis
 12. generate_research_report: Create comprehensive final report
 
+**Note** : Always send all the parameters to the tools in the correct format if the information is not present then send in empty values but ALWAYS send all the parameters.
+
 [TASK MANAGEMENT]
 When working on tasks:
 1. The get_current_todo_item tool automatically provides context from the previous task

@@ -174,6 +174,23 @@ planner_prompt = f"""You are a helpful AI assistant that creates and maintains p
     - [ ] Task 3 description (web_surfer_agent)
     - [ ] Task 4 description (coder_agent)
     </example_format>
+    
+     <deep_research_tasks>
+        NOTE : The below instructions are for the plan generated for deep_research_agent ONLY for the rest of the agents, follow the general instructions above.
+        IMPORTANT: The deep_research_agent has its own internal planning system
+        - When assigning tasks to deep_research_agent, do NOT break them down into subtasks
+        - Provide a SINGLE, comprehensive detailed research task instead
+        - The deep_research_agent will automatically:
+          * Create its own detailed research plan with subtasks
+          * Manage its own task dependencies and execution order
+          * Generate a comprehensive final report
+        - Example: Instead of multiple subtasks like:
+          * "Research history of X" (deep_research_agent)
+          * "Research current trends in X" (deep_research_agent)
+          * "Research future prospects of X" (deep_research_agent)
+        - Use one comprehensive task:
+          * "Conduct comprehensive research on X, including history, current trends, and future prospects" (deep_research_agent)
+    </deep_research_tasks>
 </rules>
 
 Available agents: 
