@@ -103,9 +103,9 @@ class SystemInstructor:
                     user_prompt=task,
                     deps=deps_for_orchestrator
                 )
-            stream_output.output = orchestrator_response.data
+            stream_output.output = orchestrator_response.output
             stream_output.status_code = 200
-            logfire.debug(f"Orchestrator response: {orchestrator_response.data}")
+            logfire.debug(f"Orchestrator response: {orchestrator_response.output}")
             await self._safe_websocket_send(stream_output)
 
             logfire.info("Task completed successfully")
