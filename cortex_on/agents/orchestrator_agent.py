@@ -13,7 +13,7 @@ from pydantic_ai.usage import UsageLimits
 from pydantic_ai import Agent, RunContext
 from agents.web_surfer import WebSurfer
 from utils.stream_response_format import StreamResponse
-from agents.planner_agent import planner_agent
+from agents.planner_agent import planner_agent, update_todo_status
 from agents.code_agent import coder_agent, CoderAgentDeps
 from agents.deep_research_agent import deep_research_agent, deep_research_deps
 from utils.ant_client import get_client
@@ -36,11 +36,52 @@ orchestrator_system_prompt = """You are an AI orchestrator that manages a team o
    - Implements technical solutions
    - Executes code operations
 
-3. deep_research_agent:
+[AVAILABLE TOOLS]
+1. plan_task(task: str) -> str:
+   - Plans the given task and assigns it to appropriate agents
+   - Creates a detailed plan with steps and agent assignments
+   - Returns the plan text and updates the UI with planning progress
+
+2. coder_task(task: str) -> str:
+   - Assigns coding tasks to the coder agent
+   - Handles code implementation and execution
+   - Returns the generated code or execution results
+   - Updates UI with coding progress and results
+
+3. web_surfer_task(task: str) -> str:
+   - Assigns web surfing tasks to the web surfer agent
+   - Handles web browsing, information extraction, and interactions
+   - Returns the web search results or action outcomes
+   - Updates UI with web surfing progress and results
+
+4. deep_research_agent:
    - Conducts comprehensive research on any topic
    - Performs iterative searches to gather in-depth information
    - Synthesizes findings into detailed reports with citations
    - Excellent for tasks requiring thorough investigation and analysis
+
+5. ask_human(question: str) -> str:
+   - Primary tool for human interaction and conversation
+   - Can be used for:
+     * Getting user preferences and decisions
+     * Asking clarifying questions
+     * Requesting feedback on results
+     * Having back-and-forth conversations
+     * Getting user input for complex tasks
+     * Confirming actions before execution
+     * Gathering requirements and specifications
+   - Supports natural conversation flow
+   - Each call creates a new interaction point
+   - Can be used multiple times in sequence for extended conversations
+   - Updates UI with both questions and responses
+   - Waits for user response before proceeding
+   - Returns the user's response for further processing
+
+6. planner_agent_update(completed_task: str) -> str:
+   - Updates the todo.md file to mark a task as completed
+   - Takes the description of the completed task as input
+   - Returns the updated plan with completed tasks marked
+   - Must be called after each agent completes a task
 
 [MANDATORY WORKFLOW]
 1. On receiving task:
@@ -49,7 +90,7 @@ orchestrator_system_prompt = """You are an AI orchestrator that manages a team o
    - Ensure plan includes web_surfer_agent credential access
    
    IF task involves comprehensive research or in-depth information gathering:
-   - Consider using deep_research_agent for thorough investigation
+   - Consider using deep_research_agent for thorough investigation, when using deep research always use ask_human to get more information from the user by asking very specific and targeted questions.
    
 2. During planning (plan_task):
    - Allow authentication operations
@@ -60,6 +101,12 @@ orchestrator_system_prompt = """You are an AI orchestrator that manages a team o
    FOR authentication tasks:
    - Delegate to web_surfer_agent
    - Use vault system
+
+4. After each task completion:
+   - Call planner_agent_update to mark the task as completed
+   - Review the updated plan to determine the next task
+   
+5. Error handling:
    
    FOR deep research tasks:
    - Delegate to deep_research_agent
@@ -81,14 +128,82 @@ orchestrator_system_prompt = """You are an AI orchestrator that manages a team o
    - Suggest manual alternatives
    - Block credential access
 
-Basic worflow:
+Basic workflow:
 1. Receive a task from the user.
-2. Plan the task by calling the planner agent through plan task
-3. Assign coding tasks to the coder agent through coder task if plan requires coding
+2. Plan the task by calling the planner agent through plan_task
+3. Assign coding tasks to the coder agent through coder_task if plan requires coding
    or Assign web surfing tasks to the web surfer agent through web_surfer_task if plan requires web surfing
    or Assign deep research tasks to the deep research agent through deep_research_task if plan requires comprehensive research
-4. Continue step 3 if required by the plan
-5. Return the final result to the user
+4. After each task completion, call planner_agent_update to mark the task as completed
+5. Review the updated plan to determine the next task to execute
+6. Use ask_human when you need user input or decisions
+7. Continue steps 3-6 until all tasks in the plan are completed
+8. Return the final result to the user
+
+[TOOL USAGE GUIDELINES]
+1. plan_task:
+   - Use for initial task analysis and planning
+   - Always call this first for new tasks
+   - Include clear steps and agent assignments
+
+2. coder_task:
+   - Use for any code-related operations
+   - Provide clear, specific coding instructions
+   - Handle code execution and results
+
+3. web_surfer_task:
+   - Use for web browsing and interaction tasks
+   - Handle authentication and credential tasks
+   - Extract and process web information
+
+4. deep_research_task:
+   - Use for comprehensive research tasks
+   - Provide detailed research instructions
+   - Allow sufficient time for thorough investigation
+
+5. ask_human:
+   - Use for any form of human interaction or conversation
+   - Ask clear, focused questions
+   - Support natural conversation flow
+   - Can be used for:
+     * Getting preferences and decisions
+     * Asking clarifying questions
+     * Requesting feedback
+     * Confirming actions
+     * Gathering requirements
+   - Wait for and process user responses
+   - Use for decisions that require human judgment
+   - Can be used multiple times for extended conversations
+
+6. planner_agent_update:
+   - Call after each task completion to mark it as completed
+   - Include which agent performed the task in the description
+   - Review the updated plan to determine the next task to execute
+   - Format: "Task description (agent_name)"
+
+[MANDATORY WORKFLOW FOR DEEP RESEARCH]
+1. BEFORE assigning ANY task to deep_research_agent:
+   - You MUST FIRST use ask_human to get specific information
+   - Ask targeted questions to narrow research scope
+   - Get user preferences on research depth and focus areas
+   - This step CANNOT be skipped under any circumstances
+   - Example of targeted questions:
+     * For a query like "research about credit cards in India":
+       - "Are you interested in credit cards for rewards, cashback, travel, fuel, or business?"
+       - "Any preferred banks or issuers?"
+       - "Monthly income or credit score (approx.)?"
+       - "Any specific fees or interest rates you want to avoid?"
+       - "New user offers or lifetime free cards preferred?"
+   
+2. Only AFTER getting user input through ask_human:
+   - Then assign the task to deep_research_agent
+   - Include the additional context from user in the research task
+   
+3. This sequence is REQUIRED:
+   - First: ask_human for targeted questions
+   - Second: deep_research_task with enhanced context
+   - Never call deep_research_task without prior ask_human
+
 """
 
 model = AnthropicModel(
@@ -203,7 +318,10 @@ async def coder_task(ctx: RunContext[orchestrator_deps], task: str) -> str:
         coder_stream_output.steps.append("Coding task completed successfully")
         await _safe_websocket_send(ctx.deps.websocket, coder_stream_output)
 
-        return response_data
+        # Add a reminder in the result message to update the plan using planner_agent_update
+        response_with_reminder = f"{response_data}\n\nReminder: You must now call planner_agent_update with the completed task description: \"{task} (coder_agent)\""
+
+        return response_with_reminder
     except Exception as e:
         error_msg = f"Error assigning coding task: {str(e)}"
         logfire.error(error_msg, exc_info=True)
@@ -252,16 +370,20 @@ async def web_surfer_task(ctx: RunContext[orchestrator_deps], task: str) -> str:
             web_surfer_stream_output.steps.append("Web search completed successfully")
             web_surfer_stream_output.output = message
             web_surfer_stream_output.status_code = 200
+
+            # Add a reminder to update the plan
+            message_with_reminder = f"{message}\n\nReminder: You must now call planner_agent_update with the completed task description: \"{task} (web_surfer_agent)\""
         else:
             web_surfer_stream_output.steps.append(f"Web search completed with issues: {message[:100]}")
             web_surfer_stream_output.status_code = 500
+            message_with_reminder = message
         
         await _safe_websocket_send(ctx.deps.websocket, web_surfer_stream_output)
         
         web_surfer_stream_output.steps.append(f"WebSurfer completed: {'Success' if success else 'Failed'}")
-        await _safe_websocket_send(ctx.deps.websocket,web_surfer_stream_output)
+        await _safe_websocket_send(ctx.deps.websocket, web_surfer_stream_output)
         
-        return message
+        return message_with_reminder
     except Exception as e:
         error_msg = f"Error assigning web surfing task: {str(e)}"
         logfire.error(error_msg, exc_info=True)
@@ -271,6 +393,160 @@ async def web_surfer_task(ctx: RunContext[orchestrator_deps], task: str) -> str:
         web_surfer_stream_output.status_code = 500
         await _safe_websocket_send(ctx.deps.websocket, web_surfer_stream_output)
         return f"Failed to assign web surfing task: {error_msg}"
+
+@orchestrator_agent.tool
+async def ask_human(ctx: RunContext[orchestrator_deps], question: str) -> str:
+    """Sends a question to the frontend and waits for human input"""
+    try:
+        logfire.info(f"Asking human: {question}")
+        
+        # Create a new StreamResponse for Human Input
+        human_stream_output = StreamResponse(
+            agent_name="Human Input",
+            instructions=question,
+            steps=[],
+            output="",
+            status_code=0
+        )
+
+        # Add to orchestrator's response collection if available
+        if ctx.deps.agent_responses is not None:
+            ctx.deps.agent_responses.append(human_stream_output)
+
+        # Send the question to frontend
+        await _safe_websocket_send(ctx.deps.websocket, human_stream_output)
+        
+        # Update stream with waiting message
+        human_stream_output.steps.append("Waiting for human input...")
+        await _safe_websocket_send(ctx.deps.websocket, human_stream_output)
+        
+        # Wait for response from frontend
+        response = await ctx.deps.websocket.receive_text()
+        
+        # Update stream with response
+        human_stream_output.steps.append("Received human input")
+        human_stream_output.output = response
+        human_stream_output.status_code = 200
+        await _safe_websocket_send(ctx.deps.websocket, human_stream_output)
+        
+        return response
+    except Exception as e:
+        error_msg = f"Error getting human input: {str(e)}"
+        logfire.error(error_msg, exc_info=True)
+        
+        # Update stream with error
+        human_stream_output.steps.append(f"Failed to get human input: {str(e)}")
+        human_stream_output.status_code = 500
+        await _safe_websocket_send(ctx.deps.websocket, human_stream_output)
+        
+        return f"Failed to get human input: {error_msg}"
+
+@orchestrator_agent.tool
+async def planner_agent_update(ctx: RunContext[orchestrator_deps], completed_task: str) -> str:
+    """
+    Updates the todo.md file to mark a task as completed and returns the full updated plan.
+    
+    Args:
+        completed_task: Description of the completed task including which agent performed it
+    
+    Returns:
+        The complete updated todo.md content with tasks marked as completed
+    """
+    try:
+        logfire.info(f"Updating plan with completed task: {completed_task}")
+        
+        # Create a new StreamResponse for Planner Agent update
+        planner_stream_output = StreamResponse(
+            agent_name="Planner Agent",
+            instructions=f"Update todo.md to mark as completed: {completed_task}",
+            steps=[],
+            output="",
+            status_code=0
+        )
+        
+        # Send initial update
+        await _safe_websocket_send(ctx.deps.websocket, planner_stream_output)
+        
+        # Directly read and update the todo.md file
+        base_dir = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
+        planner_dir = os.path.join(base_dir, "agents", "planner")
+        todo_path = os.path.join(planner_dir, "todo.md")
+        
+        planner_stream_output.steps.append("Reading current todo.md...")
+        await _safe_websocket_send(ctx.deps.websocket, planner_stream_output)
+        
+        # Make sure the directory exists
+        os.makedirs(planner_dir, exist_ok=True)
+        
+        try:
+            # Check if todo.md exists
+            if not os.path.exists(todo_path):
+                planner_stream_output.steps.append("No todo.md file found. Will create new one after task completion.")
+                await _safe_websocket_send(ctx.deps.websocket, planner_stream_output)
+                
+                # We'll directly call planner_agent.run() to create a new plan first
+                plan_prompt = f"Create a simple task plan based on this completed task: {completed_task}"
+                plan_response = await planner_agent.run(user_prompt=plan_prompt)
+                current_content = plan_response.data.plan
+            else:
+                # Read existing todo.md
+                with open(todo_path, "r") as file:
+                    current_content = file.read()
+                    planner_stream_output.steps.append(f"Found existing todo.md ({len(current_content)} bytes)")
+                    await _safe_websocket_send(ctx.deps.websocket, planner_stream_output)
+            
+            # Now call planner_agent.run() with specific instructions to update the plan
+            update_prompt = f"""
+            Here is the current todo.md content:
+            
+            {current_content}
+            
+            Please update this plan to mark the following task as completed: {completed_task}
+            Return ONLY the fully updated plan with appropriate tasks marked as [x] instead of [ ].
+            """
+            
+            planner_stream_output.steps.append("Asking planner to update the plan...")
+            await _safe_websocket_send(ctx.deps.websocket, planner_stream_output)
+            
+            updated_plan_response = await planner_agent.run(user_prompt=update_prompt)
+            updated_plan = updated_plan_response.data.plan
+            
+            # Write the updated plan back to todo.md
+            with open(todo_path, "w") as file:
+                file.write(updated_plan)
+            
+            planner_stream_output.steps.append("Plan updated successfully")
+            planner_stream_output.output = updated_plan
+            planner_stream_output.status_code = 200
+            await _safe_websocket_send(ctx.deps.websocket, planner_stream_output)
+            
+            # Update orchestrator stream
+            if ctx.deps.stream_output:
+                ctx.deps.stream_output.steps.append(f"Plan updated to mark task as completed: {completed_task}")
+                await _safe_websocket_send(ctx.deps.websocket, ctx.deps.stream_output)
+            
+            return updated_plan
+            
+        except Exception as e:
+            error_msg = f"Error during plan update operations: {str(e)}"
+            logfire.error(error_msg, exc_info=True)
+            
+            planner_stream_output.steps.append(f"Plan update failed: {str(e)}")
+            planner_stream_output.status_code = a500
+            await _safe_websocket_send(ctx.deps.websocket, planner_stream_output)
+            
+            return f"Failed to update the plan: {error_msg}"
+        
+    except Exception as e:
+        error_msg = f"Error updating plan: {str(e)}"
+        logfire.error(error_msg, exc_info=True)
+        
+        # Update stream output with error
+        if ctx.deps.stream_output:
+            ctx.deps.stream_output.steps.append(f"Failed to update plan: {str(e)}")
+            await _safe_websocket_send(ctx.deps.websocket, ctx.deps.stream_output)
+        
+        return f"Failed to update plan: {error_msg}"
 
 @orchestrator_agent.tool
 async def deep_research_task(ctx: RunContext[orchestrator_deps], task: str) -> str:

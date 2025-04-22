@@ -389,9 +389,9 @@ async def get_current_todo_item(
 async def mark_todo_item_complete(
     ctx: RunContext[deep_research_deps],
     item_id: str = '',
-    findings: Optional[str] = None,
-    knowledge_gaps: Optional[List[str]] = None,
-    report_section: Optional[str] = None
+    findings: str = '',
+    knowledge_gaps: list = None,
+    report_section: str = None
 ) -> str:
     """Mark a todo item as complete and store its findings. All parameters except item_id are optional."""
     # Fallbacks for missing fields
