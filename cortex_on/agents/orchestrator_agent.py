@@ -160,7 +160,8 @@ Basic workflow:
 """
 
 async def orchestrator_agent(model_preference: str) -> Agent:
-    if model_preference == "Anthropic":
+    if model_preference == "Anthropic":                                                                                                 
+
         model = get_anthropic_model_instance()
     elif model_preference == "OpenAI":
         model = get_openai_model_instance()
@@ -259,7 +260,8 @@ async def orchestrator_agent(model_preference: str) -> Agent:
             # Create deps with the new stream_output
             deps_for_coder_agent = CoderAgentDeps(
                 websocket=ctx.deps.websocket,
-                stream_output=coder_stream_output
+                stream_output=coder_stream_output,
+                model_preference=ctx.deps.model_preference
             )
 
             # Run coder agent
@@ -479,7 +481,8 @@ async def orchestrator_agent(model_preference: str) -> Agent:
                 planner_stream_output.steps.append("Asking planner to update the plan...")
                 await _safe_websocket_send(ctx.deps.websocket, planner_stream_output)
                 
-                updated_plan_response = await planner_agent.run(user_prompt=update_prompt)
+                agent = await planner_agent(model_preference=ctx.deps.model_preference)
+                updated_plan_response = await agent.run(user_prompt=update_prompt)
                 updated_plan = updated_plan_response.data.plan
                 
 
@@ -506,7 +509,7 @@ async def orchestrator_agent(model_preference: str) -> Agent:
                 logfire.error(error_msg, exc_info=True)
                 
                 planner_stream_output.steps.append(f"Plan update failed: {str(e)}")
-                planner_stream_output.status_code = a500
+                planner_stream_output.status_code = 500
                 await _safe_websocket_send(ctx.deps.websocket, planner_stream_output)
                 
                 return f"Failed to update the plan: {error_msg}"
