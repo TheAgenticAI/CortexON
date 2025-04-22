@@ -7,6 +7,9 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect ,Depends
 from fastapi.middleware.cors import CORSMiddleware
 import logfire
 
+# Configure Logfire
+logfire.configure()
+
 # Local application imports
 from instructor import SystemInstructor
 
@@ -102,11 +105,14 @@ async def websocket_endpoint(websocket: WebSocket):
                 logfire.info(f"Received message, using model: {model_preference}")
                 await generate_response(data, websocket, model_preference)
             except WebSocketDisconnect:
-                print("Websocket disconnected")
+                print("[WEBSOCKET] Client disconnected")
                 break
             except Exception as e:
                 print(f"[WEBSOCKET] Error handling message: {str(e)}")
+                if "disconnect message has been received" in str(e):
+                    print(f"[WEBSOCKET] DIsconnect detected, closing connection: {str(e)}")
+                    break
     except Exception as e:
         print(f"[WEBSOCKET] Connection error: {str(e)}")
-    # finally:
-    #     print("[WEBSOCKET] connection closed")
+        # finally:
+        #     print("[WEBSOCKET] connection closed")

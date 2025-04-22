@@ -44,7 +44,7 @@ const Header = () => {
         className="rounded-xl"
         onClick={() => {
           dispatch(setMessages([]));
-          window.location.href = "/";
+          nav("/");
         }}
       >
         <MessageCirclePlus size={20} absoluteStrokeWidth />
