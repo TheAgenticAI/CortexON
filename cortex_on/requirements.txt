@@ -65,25 +65,12 @@ pyasn1_modules==0.4.1
 pycparser==2.22
 pycryptodome==3.21.0
 pydantic==2.10.4
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
 pydantic-ai==0.1.2
 pydantic-ai-slim==0.1.2
-=======
-pydantic-ai==0.1.0
-pydantic-ai-slim==0.1.0
->>>>>>> 7ae43c2 (fix(pydantic_ai): Consistent code according to updated pydantic library)
-=======
-pydantic-ai==0.1.2
-pydantic-ai-slim==0.1.2
->>>>>>> 53a00a5 (fix(mcp + pydantic_ai): Added proper MCP integration and server initialization)
-=======
-pydantic-ai==0.1.2
-pydantic-ai-slim==0.1.2
->>>>>>> 2a9552b3398209051b836d6db168cd6209502126
-mcp==1.6.0
 pydantic_core==2.27.2
+pydantic-ai==0.1.2
+pydantic-ai-slim==0.1.2
+mcp==1.6.0
 Pygments==2.18.0
 python-dateutil==2.9.0.post0
 python-dotenv==1.0.1

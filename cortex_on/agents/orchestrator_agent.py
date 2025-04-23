@@ -513,14 +513,4 @@ orchestrator_agent = Agent(
 #         return f"Failed to update plan: {error_msg}"
 
 # # Helper function for sending WebSocket messages
-# async def _safe_websocket_send(websocket: Optional[WebSocket], message: Any) -> bool:
-#     """Safely send message through websocket with error handling"""
-#     try:
-#         if websocket and websocket.client_state.CONNECTED:
-#             await websocket.send_text(json.dumps(asdict(message)))
-#             logfire.debug("WebSocket message sent (_safe_websocket_send): {message}", message=message)
-#             return True
-#         return False
-#     except Exception as e:
-#         logfire.error(f"WebSocket send failed: {str(e)}")
-#         return False
+
