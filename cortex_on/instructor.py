@@ -98,28 +98,16 @@ class SystemInstructor:
             await self._safe_websocket_send(stream_output)
             stream_output.steps.append("Agents initialized successfully")
             await self._safe_websocket_send(stream_output)
-            
-            # Generate a unique request ID
-            request_id = str(uuid.uuid4())
-            
-            # Store the dependencies in the MCP server's request context
-            from agents.mcp_server import request_contexts
-            request_contexts[request_id] = deps_for_orchestrator
-            
-            try:
-                async with orchestrator_agent.run_mcp_servers():
-                    orchestrator_response = await orchestrator_agent.run(
-                        user_prompt=task,
-                        deps=deps_for_orchestrator
-                    )
-                    stream_output.output = orchestrator_response.output
-                    stream_output.status_code = 200
-                    logfire.debug(f"Orchestrator response: {orchestrator_response.output}")
-                    await self._safe_websocket_send(stream_output)
-            finally:
-                # Clean up the request context
-                if request_id in request_contexts:
-                    del request_contexts[request_id]
+
+            async with orchestrator_agent.run_mcp_servers():
+                orchestrator_response = await orchestrator_agent.run(
+                    user_prompt=task,
+                    deps=deps_for_orchestrator
+                )
+            stream_output.output = orchestrator_response.output
+            stream_output.status_code = 200
+            logfire.debug(f"Orchestrator response: {orchestrator_response.output}")
+            await self._safe_websocket_send(stream_output)
 
             logfire.info("Task completed successfully")
             return [json.loads(json.dumps(asdict(i), cls=DateTimeEncoder)) for i in self.orchestrator_response]
