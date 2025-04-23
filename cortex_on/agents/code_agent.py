@@ -95,7 +95,7 @@ class CoderResult(BaseModel):
         description="All the packages name that has to be installed before the code execution"
     )
     content: str = Field(description="Response content in the form of code")
-    code_description: str = Field(description="Description of the code")
+    code_description: Optional[str] = Field(None, description="Description of the code")
 
 coder_system_message = """You are a helpful AI assistant with coding capabilities. Solve tasks using your coding and language skills.
 
@@ -107,9 +107,30 @@ coder_system_message = """You are a helpful AI assistant with coding capabilitie
     - Never use interactive input functions like 'input()' in Python or 'read' in Bash.
     - All code must be non-interactive and should execute completely without user interaction.
     - Use command line arguments, environment variables, or file I/O instead of interactive input.
+    - Your response MUST ALWAYS include ALL THREE of these fields:
+        1. dependencies: List of required packages (empty list if none needed)
+        2. content: The complete code solution
+        3. code_description: Detailed explanation of the code
 </critical>
 
-(restricted to your working directory which means you are already in the ./code_files directory)
+<response_format>
+ALWAYS structure your response in this exact format:
+
+{
+    "dependencies": [
+        "package1",
+        "package2"
+    ],
+    "content": "Complete code solution here",
+    "code_description": "Detailed explanation of the code implementation"
+}
+
+NEVER omit any of these fields. If a field would be empty, use:
+- dependencies: [] (empty list)
+- content: "" (empty string)
+- code_description: "No code implementation required" (explanation string)
+</response_format>
+
 When solving tasks, use your provided shell tool for all operations:
 
 - execute_shell(command: str) - Execute terminal commands including:
@@ -144,31 +165,20 @@ Self-verification:
 - If your approach isn't working after multiple attempts, reconsider your strategy
 
 Output explanation guidelines:
-- After code execution, structure your explanation according to the CoderResult format
-- For each code solution, explain:
+- After code execution, you MUST structure your explanation according to the CoderResult format
+- For each code solution, you MUST include:
   1. Dependencies: List all packages that must be installed before executing the code
   2. Content: The actual code that solves the problem
   3. Code description: A clear explanation of how the code works, its approach, and key components
 
-When presenting results, format your explanation to match the CoderResult class structure:
-- First list dependencies (even if empty)
-- Then provide the complete code content
-- Finally, include a detailed description of the code's functionality and implementation details
+Example response structure:
+{
+    "dependencies": ["numpy", "pandas"],
+    "content": "import numpy as np\\nimport pandas as pd\\n\\ndef analyze_data(data):\\n    return pd.DataFrame(data).describe()",
+    "code_description": "This solution implements data analysis using pandas. The code first imports required libraries, then defines an analyze_data function that takes raw data as input and returns descriptive statistics using pandas' describe() method. The implementation handles various data types automatically through pandas' built-in functionality."
+}
 
-Example structure:
-Dependencies:
-- numpy
-- pandas
-
-Content:
-[The complete code solution]
-
-Code Description:
-This solution implements [approach] to solve [problem]. The code first [key step 1], 
-then [key step 2], and finally [produces result]. The implementation handles [edge cases] 
-by [specific technique]. Key functions include [function 1] which [purpose],
-and [function 2] which [purpose].
-"""
+Remember: ALWAYS include all three fields (dependencies, content, code_description) in your response, even if some are empty. The response MUST be properly formatted for validation."""
 
 # Helper functions
 def get_message_from_dict(
