@@ -232,49 +232,6 @@ def register_tools(websocket: WebSocket) -> None:
                 await _safe_websocket_send(websocket, web_surfer_stream_output)
             return f"Failed to assign web surfing task: {error_msg}"
     
-    async def ask_human(question: str) -> str:
-        """Sends a question to the frontend and waits for human input"""
-        try:
-            logfire.info(f"Asking human: {question}")
-            print(f"Asking human: {question}")
-            # Create a new StreamResponse for Human Input
-            human_stream_output = StreamResponse(
-                agent_name="Human Input",
-                instructions=question,
-                steps=[],
-                output="",
-                status_code=0
-            )
-
-            # Send the question to frontend
-            await _safe_websocket_send(websocket, human_stream_output)
-            
-            # Update stream with waiting message
-            human_stream_output.steps.append("Waiting for human input...")
-            await _safe_websocket_send(websocket, human_stream_output)
-            
-            # Wait for response from frontend
-            response = await websocket.receive_text()
-            
-            # Update stream with response
-            human_stream_output.steps.append("Received human input")
-            human_stream_output.output = response
-            human_stream_output.status_code = 200
-            await _safe_websocket_send(websocket, human_stream_output)
-            
-            return response
-        except Exception as e:
-            error_msg = f"Error getting human input: {str(e)}"
-            logfire.error(error_msg, exc_info=True)
-            
-            # Update stream with error
-            if 'human_stream_output' in locals():
-                human_stream_output.steps.append(f"Failed to get human input: {str(e)}")
-                human_stream_output.status_code = 500
-                await _safe_websocket_send(websocket, human_stream_output)
-            
-            return f"Failed to get human input: {error_msg}"
-    
     async def planner_agent_update(completed_task: str) -> str:
         """
         Updates the todo.md file to mark a task as completed and returns the full updated plan.
@@ -383,7 +340,6 @@ def register_tools(websocket: WebSocket) -> None:
         "plan_task": (plan_task, "Plans the task and assigns it to the appropriate agents"),
         "code_task": (code_task, "Assigns coding tasks to the coder agent"),
         "web_surf_task": (web_surf_task, "Assigns web surfing tasks to the web surfer agent"),
-        "ask_human": (ask_human, "Sends a question to the frontend and waits for human input"),
         "planner_agent_update": (planner_agent_update, "Updates the todo.md file to mark a task as completed")
     }
     

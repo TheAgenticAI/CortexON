@@ -181,7 +181,64 @@ orchestrator_agent = Agent(
     mcp_servers=[server],
 )
 
+@orchestrator_agent.tool
+async def ask_human(ctx: RunContext[orchestrator_deps], question: str) -> str:
+    """Sends a question to the frontend and waits for human input"""
+    try:
+        logfire.info(f"Asking human: {question}")
+        
+        # Create a new StreamResponse for Human Input
+        human_stream_output = StreamResponse(
+            agent_name="Human Input",
+            instructions=question,
+            steps=[],
+            output="",
+            status_code=0
+        )
 
+        # Add to orchestrator's response collection if available
+        if ctx.deps.agent_responses is not None:
+            ctx.deps.agent_responses.append(human_stream_output)
+
+        # Send the question to frontend
+        await _safe_websocket_send(ctx.deps.websocket, human_stream_output)
+        
+        # Update stream with waiting message
+        human_stream_output.steps.append("Waiting for human input...")
+        await _safe_websocket_send(ctx.deps.websocket, human_stream_output)
+        
+        # Wait for response from frontend
+        response = await ctx.deps.websocket.receive_text()
+        
+        # Update stream with response
+        human_stream_output.steps.append("Received human input")
+        human_stream_output.output = response
+        human_stream_output.status_code = 200
+        await _safe_websocket_send(ctx.deps.websocket, human_stream_output)
+        
+        return response
+    except Exception as e:
+        error_msg = f"Error getting human input: {str(e)}"
+        logfire.error(error_msg, exc_info=True)
+        
+        # Update stream with error
+        human_stream_output.steps.append(f"Failed to get human input: {str(e)}")
+        human_stream_output.status_code = 500
+        await _safe_websocket_send(ctx.deps.websocket, human_stream_output)
+        
+        return f"Failed to get human input: {error_msg}"
+
+async def _safe_websocket_send(socket: WebSocket, message: Any) -> bool:
+        """Safely send message through websocket with error handling"""
+        try:
+            if socket and socket.client_state.CONNECTED:
+                await socket.send_text(json.dumps(asdict(message)))
+                logfire.debug("WebSocket message sent (_safe_websocket_send): {message}", message=message)
+                return True
+            return False
+        except Exception as e:
+            logfire.error(f"WebSocket send failed: {str(e)}")
+            return False
 # @orchestrator_agent.tool
 # async def plan_task(ctx: RunContext[orchestrator_deps], task: str) -> str:
 #     """Plans the task and assigns it to the appropriate agents"""
