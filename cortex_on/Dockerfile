@@ -26,5 +26,5 @@ ENV ANTHROPIC_MODEL_NAME=${ANTHROPIC_MODEL_NAME:-claude-3-sonnet-20240229}
 EXPOSE 8081
 EXPOSE 3001
 
-# Run both the MCP server and the main API
-CMD ["sh", "-c", "python -m agents.mcp_server & uvicorn main:app --host 0.0.0.0 --port 8081"]
+# Run only the main API - MCP server will be started programmatically
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8081"]
