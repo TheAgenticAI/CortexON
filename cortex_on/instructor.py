@@ -90,7 +90,8 @@ def register_tools(websocket: WebSocket) -> None:
                 instructions=task,
                 steps=[],
                 output="",
-                status_code=0
+                status_code=0,
+                message_id=str(uuid.uuid4())
             )
             
             await _safe_websocket_send(websocket, planner_stream_output)
@@ -133,7 +134,8 @@ def register_tools(websocket: WebSocket) -> None:
                 instructions=task,
                 steps=[],
                 output="",
-                status_code=0
+                status_code=0,
+                message_id=str(uuid.uuid4())
             )
 
             await _safe_websocket_send(websocket, coder_stream_output)
@@ -187,7 +189,8 @@ def register_tools(websocket: WebSocket) -> None:
                 steps=[],
                 output="",
                 status_code=0,
-                live_url=None
+                live_url=None,
+                message_id=str(uuid.uuid4())
             )
 
             await _safe_websocket_send(websocket, web_surfer_stream_output)
@@ -245,7 +248,8 @@ def register_tools(websocket: WebSocket) -> None:
                 instructions=f"Update todo.md to mark as completed: {completed_task}",
                 steps=[],
                 output="",
-                status_code=0
+                status_code=0,
+                message_id=str(uuid.uuid4())
             )
             
             # Send initial update
@@ -386,7 +390,8 @@ class SystemInstructor:
             instructions=task,
             steps=[],
             output="",
-            status_code=0
+            status_code=0,
+            message_id=str(uuid.uuid4())
         )
         self.orchestrator_response.append(stream_output)
 

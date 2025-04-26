@@ -130,7 +130,7 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
       setIsLoading(true);
 
       const lastMessageData = lastMessage.data || [];
-      const {agent_name, instructions, steps, output, status_code, live_url} =
+      const {agent_name, instructions, steps, output, status_code, live_url, message_id} =
         lastJsonMessage as SystemMessage;
 
       console.log(lastJsonMessage);
@@ -146,12 +146,14 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
         setLiveUrl("");
       }
 
-      const agentIndex = lastMessageData.findIndex(
-        (agent: SystemMessage) => agent.agent_name === agent_name
+      // Check if we already have a message with this message_id
+      const existingMessageIndex = lastMessageData.findIndex(
+        (msg: SystemMessage) => msg.message_id === message_id
       );
 
       let updatedLastMessageData;
-      if (agentIndex !== -1) {
+      if (existingMessageIndex !== -1 && message_id) {
+        // If we have a message_id and it already exists, update that specific message
         let filteredSteps = steps;
         if (agent_name === "Web Surfer") {
           const plannerStep = steps.find((step) => step.startsWith("Plan"));
@@ -163,15 +165,17 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
             : steps.filter((step) => step.startsWith("Current"));
         }
         updatedLastMessageData = [...lastMessageData];
-        updatedLastMessageData[agentIndex] = {
+        updatedLastMessageData[existingMessageIndex] = {
           agent_name,
           instructions,
           steps: filteredSteps,
           output,
           status_code,
           live_url,
+          message_id
         };
       } else {
+        // If message_id doesn't exist or we don't have a message_id, add a new entry
         updatedLastMessageData = [
           ...lastMessageData,
           {
@@ -181,6 +185,7 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
             output,
             status_code,
             live_url,
+            message_id: message_id || `${agent_name}-${Date.now()}` // Fallback unique ID if message_id isn't provided
           },
         ];
       }
@@ -197,19 +202,31 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
 
         if (status_code === 200) {
           setOutputsList((prevList) => {
-            const existingIndex = prevList.findIndex(
-              (item) => item.agent === agent_name
-            );
-
+            // If we have a message_id, look for an exact match
+            // If not found, create a new entry rather than updating by agent name
+            const indexByMessageId = message_id 
+              ? prevList.findIndex(item => item.id === message_id)
+              : -1;
+              
             let newList;
             let newOutputIndex;
 
-            if (existingIndex >= 0) {
+            if (indexByMessageId >= 0) {
+              // Update the existing entry with matching message_id
               newList = [...prevList];
-              newList[existingIndex] = {agent: agent_name, output};
-              newOutputIndex = existingIndex;
+              newList[indexByMessageId] = {
+                agent: agent_name,
+                output,
+                id: message_id
+              };
+              newOutputIndex = indexByMessageId;
             } else {
-              newList = [...prevList, {agent: agent_name, output}];
+              // Create a new entry with this output
+              newList = [...prevList, {
+                agent: agent_name,
+                output,
+                id: message_id || `${agent_name}-${Date.now()}`
+              }];
               newOutputIndex = newList.length - 1;
             }
 
@@ -580,7 +597,7 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
                           systemMessage.agent_name === "Orchestrator" ? (
                             <div
                               className="space-y-5 bg-background mb-4 max-w-full animate-fade-in animate-once animate-delay-300"
-                              key={index}
+                              key={systemMessage.message_id || index}
                             >
                               <div className="flex flex-col gap-3 text-gray-300">
                                 {systemMessage.steps &&
@@ -609,7 +626,7 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
                           ) : systemMessage.agent_name === "Human Input" ? (
                             <div
                               className="space-y-5 bg-background mb-4 w-full animate-fade-in animate-once animate-delay-300"
-                              key={index}
+                              key={systemMessage.message_id || index}
                             >
                               <div className="transform transition-transform duration-300 hover:scale-105 animate-fade-right animate-once animate-duration-500">
                                 <div className="markdown-container text-base leading-7 break-words p-2">
@@ -761,7 +778,7 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
                             </div>
                           ) : (
                             <Card
-                              key={index}
+                              key={systemMessage.message_id || index}
                               className="p-4 bg-background mb-4 w-[98%] transition-all duration-500 ease-in-out transform hover:shadow-md hover:-translate-y-1 animate-fade-up animate-once animate-duration-700"
                               style={{animationDelay: `${index * 300}ms`}}
                             >
@@ -814,15 +831,16 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
                                   (systemMessage.agent_name !== "Web Surfer" &&
                                   systemMessage.agent_name !== "Human Input" ? (
                                     <div
-                                      onClick={() =>
-                                        handleOutputSelection(
-                                          outputsList.findIndex(
-                                            (item) =>
-                                              item.agent ===
-                                              systemMessage.agent_name
-                                          )
-                                        )
-                                      }
+                                      onClick={() => {
+                                        // First try to find by message_id, then fall back to agent name
+                                        const outputIndex = systemMessage.message_id 
+                                          ? outputsList.findIndex(item => item.id === systemMessage.message_id)
+                                          : outputsList.findIndex(item => item.agent === systemMessage.agent_name);
+                                        
+                                        if (outputIndex >= 0) {
+                                          handleOutputSelection(outputIndex);
+                                        }
+                                      }}
                                       className="rounded-md w- py-2 px-4 bg-secondary text-secondary-foreground flex items-center justify-between cursor-pointer transition-all hover:shadow-md hover:scale-102 duration-300 animate-pulse-once"
                                     >
                                       {getAgentOutputCard(
@@ -852,43 +870,43 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
                               systemMessage?.output
                           ) && (
                             <div className="space-y-3 animate-fade-in animate-once animate-delay-700 animate-duration-1000 w-[98%]">
-                              {message.data.find(
-                                (systemMessage) =>
-                                  systemMessage.agent_name === "Orchestrator"
-                              )?.status_code === 200 ? (
-                                <div
-                                  onClick={() =>
-                                    handleOutputSelection(
-                                      outputsList.findIndex(
-                                        (item) => item.agent === "Orchestrator"
-                                      )
-                                    )
-                                  }
-                                  className="rounded-md py-2 bg-[#F7E8FA] text-[#BD24CA] cursor-pointer transition-all hover:shadow-md hover:scale-102 duration-300 animate-pulse-once"
-                                >
-                                  <div className="px-3 flex items-center justify-between">
-                                    <img
-                                      src={favicon}
-                                      className="animate-spin-slow animate-duration-3000"
-                                    />
-                                    <p className="text-xl font-medium">
-                                      Task has been completed. Click here to
-                                      view results.
-                                    </p>
-                                    <ChevronRight absoluteStrokeWidth />
+                              {(() => {
+                                const orchestratorMessage = message.data.find(
+                                  (systemMessage) =>
+                                    systemMessage.agent_name === "Orchestrator"
+                                );
+                                return orchestratorMessage?.status_code === 200 ? (
+                                  <div
+                                    onClick={() => {
+                                      // First try to find by message_id, then fall back to agent name
+                                      const outputIndex = orchestratorMessage?.message_id 
+                                        ? outputsList.findIndex(item => item.id === orchestratorMessage.message_id)
+                                        : outputsList.findIndex(item => item.agent === "Orchestrator");
+                                      
+                                      if (outputIndex >= 0) {
+                                        handleOutputSelection(outputIndex);
+                                      }
+                                    }}
+                                    className="rounded-md py-2 bg-[#F7E8FA] text-[#BD24CA] cursor-pointer transition-all hover:shadow-md hover:scale-102 duration-300 animate-pulse-once"
+                                  >
+                                    <div className="px-3 flex items-center justify-between">
+                                      <img
+                                        src={favicon}
+                                        className="animate-spin-slow animate-duration-3000"
+                                      />
+                                      <p className="text-xl font-medium">
+                                        Task has been completed. Click here to
+                                        view results.
+                                      </p>
+                                      <ChevronRight absoluteStrokeWidth />
+                                    </div>
                                   </div>
-                                </div>
-                              ) : (
-                                <ErrorAlert
-                                  errorMessage={
-                                    message.data.find(
-                                      (systemMessage) =>
-                                        systemMessage.agent_name ===
-                                        "Orchestrator"
-                                    )?.output
-                                  }
-                                />
-                              )}
+                                ) : (
+                                  <ErrorAlert
+                                    errorMessage={orchestratorMessage?.output}
+                                  />
+                                );
+                              })()}
                             </div>
                           )}
                       </div>

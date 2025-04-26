@@ -3,6 +3,7 @@ import json
 import traceback
 from typing import List, Optional, Dict, Any, Union, Tuple
 from datetime import datetime
+import uuid
 from pydantic import BaseModel
 from dataclasses import asdict, dataclass
 import logfire
@@ -193,7 +194,8 @@ async def ask_human(ctx: RunContext[orchestrator_deps], question: str) -> str:
             instructions=question,
             steps=[],
             output="",
-            status_code=0
+            status_code=0,
+            message_id=str(uuid.uuid4())
         )
 
         # Add to orchestrator's response collection if available
