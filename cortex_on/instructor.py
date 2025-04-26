@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from pydantic_ai import Agent
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.anthropic import AnthropicModel
+from mcp.server.fastmcp import FastMCP
 
 # Local application imports
 from agents.code_agent import CoderAgentDeps, coder_agent
@@ -28,26 +29,68 @@ from utils.stream_response_format import StreamResponse
 from agents.mcp_server import server
 load_dotenv()
 
-# Flag to track if MCP server is running
-_mcp_server_running = False
+# Server manager to handle multiple MCP servers
+class ServerManager:
+    def __init__(self):
+        self.servers = {}  # Dictionary to track running servers by port
+        self.default_port = 8002 # default port for main MCP server with agents as a tool
+    
+    def start_server(self, port=None, name=None):
+        """Start an MCP server on the specified port"""
+        if port is None:
+            port = self.default_port
+        
+        if name is None:
+            name = f"mcp_server_{port}"
+            
+        # Check if server is already running on this port
+        if port in self.servers and self.servers[port]['running']:
+            logfire.info(f"MCP server already running on port {port}")
+            return
+        
+        # Configure server for this port
+        server_instance = FastMCP(name=name, host="0.0.0.0", port=port)
+        
+        # Track server in our registry
+        self.servers[port] = {
+            'running': True,
+            'name': name,
+            'instance': server_instance,
+            'thread': None
+        }
+        
+        def run_server():
+            logfire.info(f"Starting MCP server '{name}' on port {port}...")
+            # Configure the server to use the specified port
+            server_instance.run(transport="sse")
+        
+        # Start in a separate thread
+        thread = threading.Thread(target=run_server, daemon=True)
+        thread.start()
+        self.servers[port]['thread'] = thread
+        logfire.info(f"MCP server thread started for '{name}' on port {port}")
+    
+    def get_server(self, port=None):
+        """Get the server instance for the specified port"""
+        if port is None:
+            port = self.default_port
+            
+        if port in self.servers:
+            return self.servers[port]['instance']
+        return None
 
+# Initialize the server manager
+server_manager = ServerManager()
+
+def start_mcp_server(port=None, name=None):
+    """Start an MCP server on the specified port"""
+    server_manager.start_server(port=port, name=name)
+    #we can add multiple servers here
+
+# For backwards compatibility
 def start_mcp_server_in_thread():
-    """Start the MCP server in a separate thread"""
-    global _mcp_server_running
-    if _mcp_server_running:
-        return
-    
-    _mcp_server_running = True
-    
-    def run_server():
-        logfire.info("Starting MCP server...")
-        server.run(transport="sse")
-    
-    # Start in a separate thread
-    thread = threading.Thread(target=run_server, daemon=True)
-    thread.start()
-    logfire.info("MCP server thread started")
-
+    """Start the MCP server in a separate thread (legacy function)"""
+    start_mcp_server()
 
 class DateTimeEncoder(json.JSONEncoder):
     """Custom JSON encoder that can handle datetime objects and Pydantic models"""
@@ -65,26 +108,34 @@ class DateTimeEncoder(json.JSONEncoder):
         return super().default(obj)
 
 
-def register_tools(websocket: WebSocket) -> None:
+def register_tools_for_main_mcp_server(websocket: WebSocket, port=None) -> None:
     """
     Dynamically register MCP server tools with the provided WebSocket.
     This ensures all tools have access to the active WebSocket connection.
+    
+    Args:
+        websocket: The active WebSocket connection
+        port: Optional port number to target a specific MCP server
     """
+    # Get the appropriate server instance
+    server_instance = server_manager.get_server(port)
+    if server_instance is None:
+        logfire.error(f"No MCP server found on port {port or server_manager.default_port}")
+        return
+    
     # First, unregister existing tools if they exist
     tool_names = ["plan_task", "code_task", "web_surf_task", "ask_human", "planner_agent_update"]
     for tool_name in tool_names:
-        if tool_name in server._tool_manager._tools:
-            del server._tool_manager._tools[tool_name]
+        if tool_name in server_instance._tool_manager._tools:
+            del server_instance._tool_manager._tools[tool_name]
     
     logfire.info("Registering MCP tools with WebSocket connection")
     
-    # Function to create each tool with the websocket in closure
     async def plan_task(task: str) -> str:
         """Plans the task and assigns it to the appropriate agents"""
         try:
             logfire.info(f"Planning task: {task}")
             print(f"Planning task: {task}")
-            # Create a new StreamResponse for Planner Agent
             planner_stream_output = StreamResponse(
                 agent_name="Planner Agent",
                 instructions=task,
@@ -347,11 +398,11 @@ def register_tools(websocket: WebSocket) -> None:
         "planner_agent_update": (planner_agent_update, "Updates the todo.md file to mark a task as completed")
     }
     
-    # Register each tool
+    # Register each tool with the specified server instance
     for name, (fn, desc) in tool_definitions.items():
-        server._tool_manager.add_tool(fn, name=name, description=desc)
+        server_instance._tool_manager.add_tool(fn, name=name, description=desc)
     
-    logfire.info(f"Successfully registered {len(tool_definitions)} tools with the MCP server")
+    logfire.info(f"Successfully registered {len(tool_definitions)} tools with the MCP server on port {port or server_manager.default_port}")
 
 
 # Main Orchestrator Class
@@ -382,8 +433,15 @@ class SystemInstructor:
             logfire.error(f"WebSocket send failed: {str(e)}")
             return False
 
-    async def run(self, task: str, websocket: WebSocket) -> List[Dict[str, Any]]:
-        """Main orchestration loop with comprehensive error handling"""
+    async def run(self, task: str, websocket: WebSocket, server_config: Optional[Dict[str, int]] = None) -> List[Dict[str, Any]]:
+        """
+        Main orchestration loop with comprehensive error handling
+        
+        Args:
+            task: The task instructions
+            websocket: The active WebSocket connection
+            server_config: Optional configuration for MCP servers {name: port}
+        """
         self.websocket = websocket
         stream_output = StreamResponse(
             agent_name="Orchestrator",
@@ -403,20 +461,22 @@ class SystemInstructor:
         )
 
         try:
-            # Register tools first - before MCP server starts or is accessed by orchestrator
-            register_tools(websocket=self.websocket)
-            
-            # Start the MCP server if it's not already running
-            start_mcp_server_in_thread()
-            
-            # Give MCP server a moment to initialize
-            await asyncio.sleep(1)
-            
             # Initialize system
             await self._safe_websocket_send(stream_output)
-            stream_output.steps.append("Agents initialized successfully")
-            await self._safe_websocket_send(stream_output)
+            
+            # Apply default server configuration if none provided
+            if server_config is None:
+                server_config = {
+                    "main": server_manager.default_port
+                }
+            
+            # Start each configured MCP server
+            for server_name, port in server_config.items():
+                start_mcp_server(port=port, name=server_name)
+                # Register tools for this server
+                register_tools_for_main_mcp_server(websocket=self.websocket, port=port)
 
+            # Configure orchestrator_agent to use the main MCP server port
             async with orchestrator_agent.run_mcp_servers():
                 orchestrator_response = await orchestrator_agent.run(
                     user_prompt=task,

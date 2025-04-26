@@ -164,7 +164,11 @@ Basic workflow:
 
 # Initialize MCP Server
 # server = MCPServerStdio('python', ["-m", "agents.mcp_server"])
-server = MCPServerHTTP(url='http://localhost:3001/sse')  
+#we can add multiple servers here
+#example:
+# server1 = MCPServerHTTP(url='http://localhost:8004/sse')  
+# server2 = MCPServerHTTP(url='http://localhost:8003/sse')  
+server = MCPServerHTTP(url='http://localhost:8002/sse')  
 
 # Initialize Anthropic provider with API key
 provider = AnthropicProvider(api_key=os.environ.get("ANTHROPIC_API_KEY"))
