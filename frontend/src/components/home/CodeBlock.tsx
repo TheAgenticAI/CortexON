@@ -6,10 +6,6 @@ import rehypeRaw from "rehype-raw";
 import remarkBreaks from "remark-breaks";
 
 export const CodeBlock = ({content}: {content: string}) => {
-  const codeBlock = content.includes("content='")
-    ? content.split("content='")[1]
-    : content;
-
   const [isCopied, setIsCopied] = useState(false);
   const codeRef = useRef<HTMLDivElement>(null);
 
@@ -48,6 +44,9 @@ export const CodeBlock = ({content}: {content: string}) => {
     }
   };
 
+  // Process the content to handle any special formatting
+  const processedContent = content.replace(/\\n/g, "\n");
+
   return (
     <div className="relative w-full overflow-x-auto scrollbar-thin text-sm leading-6 bg-zinc-900 rounded-lg shadow-md p-4">
       <button
@@ -70,7 +69,7 @@ export const CodeBlock = ({content}: {content: string}) => {
       </button>
       <div ref={codeRef} className="markdown-container text-zinc-200">
         <Markdown
-          children={codeBlock.replace(/\\n/g, "\n")}
+          children={processedContent}
           rehypePlugins={[rehypeRaw]}
           remarkPlugins={[remarkBreaks]}
           components={{
