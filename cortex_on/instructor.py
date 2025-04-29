@@ -2,6 +2,9 @@
 import json
 import os
 import traceback
+import yaml
+import subprocess
+import asyncio
 from dataclasses import asdict
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -16,11 +19,14 @@ from pydantic_ai import Agent
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.anthropic import AnthropicModel
 from mcp.server.fastmcp import FastMCP
+from pydantic_ai.mcp import MCPServerHTTP
 
 # Local application imports
-from agents.orchestrator_agent import orchestrator_agent, orchestrator_deps
+from agents.orchestrator_agent import orchestrator_agent, orchestrator_deps, orchestrator_system_prompt
 from utils.stream_response_format import StreamResponse
 from agents.mcp_server import start_mcp_server, register_tools_for_main_mcp_server, server_manager
+from connect_to_external_server import server_provider
+from prompts import time_server_prompt
 load_dotenv()
 
 class DateTimeEncoder(json.JSONEncoder):
@@ -44,6 +50,7 @@ class SystemInstructor:
         self.websocket: Optional[WebSocket] = None
         self.stream_output: Optional[StreamResponse] = None
         self.orchestrator_response: List[StreamResponse] = []
+        self.external_servers: Dict[str, Dict[str, Any]] = {}
         self._setup_logging()
 
     def _setup_logging(self) -> None:
@@ -90,26 +97,33 @@ class SystemInstructor:
         deps_for_orchestrator = orchestrator_deps(
             websocket=self.websocket,
             stream_output=stream_output,
-            agent_responses=self.orchestrator_response  # Pass reference to collection
+            agent_responses=self.orchestrator_response
         )
 
         try:
             # Initialize system
             await self._safe_websocket_send(stream_output)
             
-            # Apply default server configuration if none provided
+            # Use the default port for main MCP server
+            main_port = server_manager.default_port  # This is 8002
+            
+            # Merge default and external server configurations
             if server_config is None:
                 server_config = {
-                    "main": server_manager.default_port
+                    "main": main_port
                 }
             
-            # Start each configured MCP server
-            for server_name, port in server_config.items():
-                start_mcp_server(port=port, name=server_name)
-                # Register tools for this server
-                register_tools_for_main_mcp_server(websocket=self.websocket, port=port)
+            # Start the main MCP server - already handled by the framework
+            start_mcp_server(port=main_port, name="main")
+            register_tools_for_main_mcp_server(websocket=self.websocket, port=main_port)
+            
+            # Start each configured external MCP server
+            servers, system_prompt = await server_provider.load_servers()
+            orchestrator_agent._mcp_servers = servers
+            orchestrator_agent.system_prompt = orchestrator_system_prompt + "\n\n" + system_prompt
+            logfire.info(f"Updated orchestrator agent with {len(servers)} MCP servers. Current MCP servers: {orchestrator_agent._mcp_servers}")
 
-            # Configure orchestrator_agent to use the main MCP server port
+            # Configure orchestrator_agent to use all configured MCP servers
             async with orchestrator_agent.run_mcp_servers():
                 orchestrator_response = await orchestrator_agent.run(
                     user_prompt=task,
@@ -143,7 +157,6 @@ class SystemInstructor:
 
         finally:
             logfire.info("Orchestration process complete")
-            # Clear any sensitive data
 
     async def shutdown(self):
         """Clean shutdown of orchestrator"""

@@ -181,7 +181,7 @@ orchestrator_agent = Agent(
     name="Orchestrator Agent",
     system_prompt=orchestrator_system_prompt,
     deps_type=orchestrator_deps,
-    mcp_servers=[server],
+   #  mcp_servers=[server],
 )
 
 # Human Input Tool attached to the orchestrator agent as a tool

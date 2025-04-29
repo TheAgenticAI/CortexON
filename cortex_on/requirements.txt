@@ -96,3 +96,4 @@ yarl==1.18.3
 zipp==3.21.0
 fast-graphrag==0.0.4
 llama_parse==0.5.19
+mcp-server-time
