@@ -7,10 +7,12 @@ services:
       dockerfile: Dockerfile
     volumes:
       - ./cortex_on:/app
+      - /var/run/docker.sock:/var/run/docker.sock
     env_file:
       - .env
     restart: always
     network_mode: host
+    privileged: true
 
   agentic_browser:
     build:

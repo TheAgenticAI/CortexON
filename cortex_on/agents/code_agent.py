@@ -5,6 +5,7 @@ import shlex
 import subprocess
 from dataclasses import asdict, dataclass
 from typing import Any, Callable, Dict, List, Optional, Tuple
+import uuid
 
 # Third-party imports
 from dotenv import load_dotenv
@@ -18,6 +19,8 @@ from pydantic_ai.providers.anthropic import AnthropicProvider
 # Local application imports
 from utils.ant_client import get_client
 from utils.stream_response_format import StreamResponse
+from utils.docker_executor import run_docker_container
+from utils.code_formatter import format_execution_result
 
 load_dotenv()
 
@@ -26,328 +29,28 @@ load_dotenv()
 class CoderAgentDeps:
     websocket: Optional[WebSocket] = None
     stream_output: Optional[StreamResponse] = None
-
-# Constants - Expanded to support multiple languages
-ALLOWED_COMMANDS = {
-    # File system commands
-    "ls", "dir", "cat", "echo", "mkdir", "touch", "rm", "cp", "mv",
-    
-    # Language interpreters/compilers
-    "python", "python3", "pip", "node", "npm", "java", "javac", 
-    "gcc", "g++", "clang", "clang++", "go", "rustc", "cargo",
-    "ruby", "perl", "php", "dotnet", "csc", "swift",
-    
-    # TypeScript specific commands
-    "tsc", "npx", "ts-node",
-    
-    # Build tools
-    "make", "cmake", "gradle", "maven", "mvn",
-    
-    # Runtime utilities
-    "sh", "bash", "zsh", "powershell", "pwsh"
-}
+    session_id: Optional[str] = None  # Add session_id for persistent Docker environment
 
 # Language-specific file extensions
 LANGUAGE_EXTENSIONS = {
     "python": ".py",
-    "python3": ".py",
-    "javascript": ".js",
-    "node": ".js",
-    "typescript": ".ts",
     "java": ".java",
-    "c": ".c",
     "cpp": ".cpp",
-    "c++": ".cpp",
-    "csharp": ".cs",
-    "c#": ".cs",
-    "go": ".go",
-    "golang": ".go",
-    "rust": ".rs",
+    "javascript": ".js",
+    "typescript": ".ts",
     "ruby": ".rb",
-    "perl": ".pl",
+    "go": ".go",
+    "rust": ".rs",
     "php": ".php",
-    "swift": ".swift",
+    "csharp": ".cs",
     "kotlin": ".kt",
-    "scala": ".scala",
-    "shell": ".sh",
-    "bash": ".sh",
-    "powershell": ".ps1",
-    "pwsh": ".ps1",
+    "swift": ".swift",
     "r": ".r",
-    "html": ".html",
-    "css": ".css",
-    "sql": ".sql",
+    "scala": ".scala",
+    "perl": ".pl",
+    "dart": ".dart",
+    "julia": ".jl"
 }
-
-# Language execution commands
-LANGUAGE_EXECUTION_COMMANDS = {
-    "python": "python",
-    "python3": "python3",
-    "javascript": "node",
-    "node": "node",
-    "typescript": lambda file: f"npx ts-node {file}",  # Use npx ts-node for TypeScript
-    "java": lambda file: f"java {os.path.splitext(file)[0]}", # Remove .java extension
-    "c": lambda file: f"gcc {file} -o {os.path.splitext(file)[0]} && {os.path.splitext(file)[0]}",
-    "cpp": lambda file: f"g++ {file} -o {os.path.splitext(file)[0]} && {os.path.splitext(file)[0]}",
-    "c++": lambda file: f"g++ {file} -o {os.path.splitext(file)[0]} && {os.path.splitext(file)[0]}",
-    "csharp": "dotnet run",
-    "c#": "dotnet run",
-    "go": "go run",
-    "golang": "go run",
-    "rust": lambda file: f"rustc {file} -o {os.path.splitext(file)[0]} && {os.path.splitext(file)[0]}",
-    "ruby": "ruby",
-    "perl": "perl",
-    "php": "php",
-    "swift": "swift",
-    "kotlin": "kotlin",
-    "scala": "scala",
-    "shell": "sh",
-    "bash": "bash",
-    "powershell": "pwsh",
-    "pwsh": "pwsh",
-    "r": "Rscript",
-}
-
-# Package managers for different languages
-PACKAGE_MANAGERS = {
-    "python": {"install": "pip install", "uninstall": "pip uninstall", "list": "pip list"},
-    "python3": {"install": "pip3 install", "uninstall": "pip3 uninstall", "list": "pip3 list"},
-    "javascript": {"install": "npm install", "uninstall": "npm uninstall", "list": "npm list"},
-    "node": {"install": "npm install", "uninstall": "npm uninstall", "list": "npm list"},
-    "typescript": {"install": "npm install", "uninstall": "npm uninstall", "list": "npm list"},
-    "java": {"install": "mvn install", "uninstall": "mvn uninstall", "list": "mvn dependency:list"},
-    "rust": {"install": "cargo add", "uninstall": "cargo remove", "list": "cargo tree"},
-    "ruby": {"install": "gem install", "uninstall": "gem uninstall", "list": "gem list"},
-    "go": {"install": "go get", "uninstall": "go clean -i", "list": "go list -m all"},
-    "php": {"install": "composer require", "uninstall": "composer remove", "list": "composer show"},
-    "csharp": {"install": "dotnet add package", "uninstall": "dotnet remove package", "list": "dotnet list package"},
-    "c#": {"install": "dotnet add package", "uninstall": "dotnet remove package", "list": "dotnet list package"},
-}
-
-# Message templates - Replace elif ladders with lookup dictionaries
-OPERATION_MESSAGES = {
-    "ls": lambda cmd, args: "Listing files in directory",
-    "dir": lambda cmd, args: "Listing files in directory",
-    "cat": lambda cmd, args: (
-        f"Creating file {cmd.split('>', 1)[1].strip().split(' ', 1)[0]}" 
-        if "<<" in cmd and ">" in cmd
-        else f"Reading file {args[1] if len(args) > 1 else 'file'}"
-    ),
-    "echo": lambda cmd, args: f"Creating file {cmd.split('>', 1)[1].strip()}" if ">" in cmd else "Echo command",
-    "mkdir": lambda cmd, args: f"Creating directory {args[1] if len(args) > 1 else 'directory'}",
-    "touch": lambda cmd, args: f"Creating empty file {args[1] if len(args) > 1 else 'file'}",
-    "rm": lambda cmd, args: f"Removing {args[1] if len(args) > 1 else 'file'}",
-    "cp": lambda cmd, args: f"Copying {args[1]} to {args[2]}" if len(args) >= 3 else "Copying file",
-    "mv": lambda cmd, args: f"Moving {args[1]} to {args[2]}" if len(args) >= 3 else "Moving file",
-    
-    "tsc": lambda cmd, args: f"Compiling TypeScript {args[1] if len(args) > 1 else 'program'}",
-    "ts-node": lambda cmd, args: f"Running TypeScript {args[1] if len(args) > 1 else 'program'}",
-    "npx": lambda cmd, args: f"Executing NPX command: {' '.join(args[1:]) if len(args) > 1 else 'command'}",
-
-    # Python specific
-    "python": lambda cmd, args: f"Running Python script {args[1] if len(args) > 1 else 'script'}",
-    "python3": lambda cmd, args: f"Running Python script {args[1] if len(args) > 1 else 'script'}",
-    "pip": lambda cmd, args: (
-        f"Installing Python package(s): {cmd.split('install ', 1)[1]}" 
-        if "install " in cmd 
-        else "Managing Python packages"
-    ),
-    
-    # JavaScript/Node.js
-    "node": lambda cmd, args: f"Running Node.js script {args[1] if len(args) > 1 else 'script'}",
-    "npm": lambda cmd, args: (
-        f"Installing Node.js package(s): {cmd.split('install ', 1)[1]}" 
-        if "install " in cmd 
-        else "Managing Node.js packages"
-    ),
-    
-    # Java
-    "java": lambda cmd, args: f"Running Java program {args[1] if len(args) > 1 else 'program'}",
-    "javac": lambda cmd, args: f"Compiling Java files {' '.join(args[1:]) if len(args) > 1 else ''}",
-    
-    # C/C++
-    "gcc": lambda cmd, args: f"Compiling C program {args[1] if len(args) > 1 else 'program'}",
-    "g++": lambda cmd, args: f"Compiling C++ program {args[1] if len(args) > 1 else 'program'}",
-    "clang": lambda cmd, args: f"Compiling C program with Clang {args[1] if len(args) > 1 else 'program'}",
-    "clang++": lambda cmd, args: f"Compiling C++ program with Clang {args[1] if len(args) > 1 else 'program'}",
-    
-    # Go
-    "go": lambda cmd, args: (
-        f"Running Go program {args[1] if len(args) > 1 else 'program'}" 
-        if args[0] == "run" 
-        else f"Managing Go {args[0]} operation"
-    ),
-    
-    # Rust
-    "rustc": lambda cmd, args: f"Compiling Rust program {args[1] if len(args) > 1 else 'program'}",
-    "cargo": lambda cmd, args: f"Managing Rust project with Cargo: {args[1] if len(args) > 1 else 'operation'}",
-    
-    # Ruby
-    "ruby": lambda cmd, args: f"Running Ruby script {args[1] if len(args) > 1 else 'script'}",
-    
-    # Other languages
-    "perl": lambda cmd, args: f"Running Perl script {args[1] if len(args) > 1 else 'script'}",
-    "php": lambda cmd, args: f"Running PHP script {args[1] if len(args) > 1 else 'script'}",
-    "dotnet": lambda cmd, args: f"Running .NET command: {args[1] if len(args) > 1 else 'command'}",
-    "csc": lambda cmd, args: f"Compiling C# program {args[1] if len(args) > 1 else 'program'}",
-    "swift": lambda cmd, args: f"Running Swift program {args[1] if len(args) > 1 else 'program'}",
-    
-    # Build tools
-    "make": lambda cmd, args: f"Building with Make {args[1] if len(args) > 1 else ''}",
-    "cmake": lambda cmd, args: f"Configuring with CMake {args[1] if len(args) > 1 else ''}",
-    "gradle": lambda cmd, args: f"Building with Gradle {args[1] if len(args) > 1 else ''}",
-    "maven": lambda cmd, args: f"Building with Maven {args[1] if len(args) > 1 else ''}",
-    "mvn": lambda cmd, args: f"Building with Maven {args[1] if len(args) > 1 else ''}",
-    
-    # Shell commands
-    "sh": lambda cmd, args: f"Running shell script {args[1] if len(args) > 1 else 'script'}",
-    "bash": lambda cmd, args: f"Running Bash script {args[1] if len(args) > 1 else 'script'}",
-    "zsh": lambda cmd, args: f"Running Zsh script {args[1] if len(args) > 1 else 'script'}",
-    "powershell": lambda cmd, args: f"Running PowerShell script {args[1] if len(args) > 1 else 'script'}",
-    "pwsh": lambda cmd, args: f"Running PowerShell script {args[1] if len(args) > 1 else 'script'}",
-}
-
-EXECUTION_MESSAGES = {
-    "python": lambda cmd, args: f"Executing Python script {args[1] if len(args) > 1 else 'script'}",
-    "python3": lambda cmd, args: f"Executing Python script {args[1] if len(args) > 1 else 'script'}",
-    "node": lambda cmd, args: f"Executing Node.js script {args[1] if len(args) > 1 else 'script'}",
-    "java": lambda cmd, args: f"Executing Java program {args[1] if len(args) > 1 else 'program'}",
-    "default": lambda cmd, args: "Executing operation"
-}
-
-SUCCESS_MESSAGES = {
-    # File operations
-    "ls": "Files listed successfully",
-    "dir": "Files listed successfully",
-    "cat": lambda cmd: "File created successfully" if "<<" in cmd else "File read successfully",
-    "echo": lambda cmd: "File created successfully" if ">" in cmd else "Echo executed successfully",
-    "mkdir": "Directory created successfully",
-    "touch": "File created successfully",
-    "rm": "File removed successfully",
-    "cp": "File copied successfully",
-    "mv": "File moved successfully",
-    
-    "tsc": "TypeScript compilation completed successfully",
-    "ts-node": "TypeScript executed successfully",
-    "npx": lambda cmd: "TypeScript executed successfully" if "ts-node" in cmd else "NPX command executed successfully",
-
-    # Python
-    "python": "Python script executed successfully",
-    "python3": "Python script executed successfully",
-    "pip": lambda cmd: "Package installation completed" if "install" in cmd else "Package operation completed",
-    
-    # JavaScript/Node.js
-    "node": "Node.js script executed successfully",
-    "npm": lambda cmd: "Node.js package operation completed successfully",
-    
-    # Java
-    "java": "Java program executed successfully",
-    "javac": "Java program compiled successfully",
-    
-    # C/C++
-    "gcc": "C program compiled successfully",
-    "g++": "C++ program compiled successfully",
-    "clang": "C program compiled successfully with Clang",
-    "clang++": "C++ program compiled successfully with Clang",
-    
-    # Go
-    "go": lambda cmd: "Go program executed successfully" if "run" in cmd else "Go operation completed successfully",
-    
-    # Rust
-    "rustc": "Rust program compiled successfully",
-    "cargo": "Cargo operation completed successfully",
-    
-    # Other languages
-    "ruby": "Ruby script executed successfully",
-    "perl": "Perl script executed successfully",
-    "php": "PHP script executed successfully",
-    "dotnet": "Dotnet operation completed successfully",
-    "csc": "C# program compiled successfully",
-    "swift": "Swift program executed successfully",
-    
-    # Build tools
-    "make": "Make build completed successfully",
-    "cmake": "CMake configuration completed successfully",
-    "gradle": "Gradle build completed successfully",
-    "maven": "Maven build completed successfully",
-    "mvn": "Maven build completed successfully",
-    
-    # Shell scripts
-    "sh": "Shell script executed successfully",
-    "bash": "Bash script executed successfully",
-    "zsh": "Zsh script executed successfully",
-    "powershell": "PowerShell script executed successfully",
-    "pwsh": "PowerShell script executed successfully",
-    
-    "default": "Operation completed successfully"
-}
-
-FAILURE_MESSAGES = {
-    # File operations
-    "ls": "Failed to list files",
-    "dir": "Failed to list files",
-    "cat": lambda cmd: "Failed to create file" if "<<" in cmd else "Failed to read file",
-    "echo": lambda cmd: "Failed to create file" if ">" in cmd else "Echo command failed",
-    "mkdir": "Failed to create directory",
-    "touch": "Failed to create file",
-    "rm": "Failed to remove file",
-    "cp": "Failed to copy file",
-    "mv": "Failed to move file",
-    "tsc": "TypeScript compilation failed",
-    "ts-node": "TypeScript execution failed",
-    "npx": lambda cmd: "TypeScript execution failed" if "ts-node" in cmd else "NPX command execution failed",
-
-    # Python
-    "python": "Python script execution failed",
-    "python3": "Python script execution failed",
-    "pip": lambda cmd: "Package installation failed" if "install" in cmd else "Package operation failed",
-    
-    # JavaScript/Node.js
-    "node": "Node.js script execution failed",
-    "npm": lambda cmd: "Node.js package operation failed",
-    
-    # Java
-    "java": "Java program execution failed",
-    "javac": "Java program compilation failed",
-    
-    # C/C++
-    "gcc": "C program compilation failed",
-    "g++": "C++ program compilation failed",
-    "clang": "C program compilation failed with Clang",
-    "clang++": "C++ program compilation failed with Clang",
-    
-    # Go
-    "go": lambda cmd: "Go program execution failed" if "run" in cmd else "Go operation failed",
-    
-    # Rust
-    "rustc": "Rust program compilation failed",
-    "cargo": "Cargo operation failed",
-    
-    # Other languages
-    "ruby": "Ruby script execution failed",
-    "perl": "Perl script execution failed",
-    "php": "PHP script execution failed",
-    "dotnet": "Dotnet operation failed",
-    "csc": "C# program compilation failed",
-    "swift": "Swift program execution failed",
-    
-    # Build tools
-    "make": "Make build failed",
-    "cmake": "CMake configuration failed",
-    "gradle": "Gradle build failed",
-    "maven": "Maven build failed",
-    "mvn": "Maven build failed",
-    
-    # Shell scripts
-    "sh": "Shell script execution failed",
-    "bash": "Bash script execution failed",
-    "zsh": "Zsh script execution failed",
-    "powershell": "PowerShell script execution failed",
-    "pwsh": "PowerShell script execution failed",
-    
-    "default": "Operation failed"
-}
-
 class CoderResult(BaseModel):
     dependencies: List = Field(
         description="All the packages name that has to be installed before the code execution"
@@ -355,100 +58,88 @@ class CoderResult(BaseModel):
     content: str = Field(description="Response content in the form of code")
     code_description: str = Field(description="Description of the code")
 
-coder_system_message = """You are a helpful AI assistant with coding capabilities. Solve tasks using your coding and language skills.
+coder_system_message = """You are a helpful AI assistant with advanced coding capabilities. Solve tasks using your coding and language skills.
 
 <critical>
-    - You have access to a single shell tool that executes terminal commands and handles file operations.
-    - All commands will be executed in a restricted directory for security.
-    - Do NOT write code that attempts to access directories outside your working directory.
-    - Do NOT provide test run snippets that print unnecessary output.
+    - You have access to a secure Docker-based code execution system that runs your code in isolated containers.
+    - The Docker container persists throughout your session, allowing you to create and use multiple files.
+    - All code executes in a secure, isolated environment with limited resources and no network access.
     - Never use interactive input functions like 'input()' in Python or 'read' in Bash.
     - All code must be non-interactive and should execute completely without user interaction.
     - Use command line arguments, environment variables, or file I/O instead of interactive input.
 </critical>
 
-(restricted to your working directory which means you are already in the ./code_files directory)
-When solving tasks, use your provided shell tool for all operations:
+You have access to the following tools for code execution and file management:
 
-- execute_shell(command: str) - Execute terminal commands including:
-  - File operations: Use 'cat' to read files, 'echo' with redirection (>) to write files
-  - Directory operations: 'ls', 'mkdir', etc.
-  - Code execution: 'python', 'node', 'java', 'gcc', etc. for running programs in different languages
-  - Package management: 'pip install', 'npm install', 'cargo add', etc. for dependencies
+1. execute_code(language: str, code: str) - Execute code directly in the Docker container
+   - The code is saved to a file named program.<ext> and executed
+   - Supported languages: python, java, cpp, javascript, typescript, ruby, go, rust, php, csharp, kotlin, swift, r, scala, perl, dart, julia, and more
+   - Resources: 1 CPU core, 512MB RAM, 30 second timeout
 
-Allowed commands for execute_shell tool include: ls, dir, cat, echo, python, python3, pip, node, npm, java, javac, gcc, g++, clang, clang++, go, rustc, cargo, ruby, perl, php, dotnet, csc, swift, make, cmake, gradle, maven, mvn, sh, bash, zsh, powershell, pwsh, mkdir, touch, rm, cp, mv
+2. create_file(filename: str, content: str, language: str = None) - Create a new file in the container
+   - Filename should include appropriate extension (e.g., 'utils.py', 'data.json')
+   - Language is optional and will be detected from the file extension
 
-Different programming languages have different ways to handle files and execution:
+3. read_file(filename: str) - Read the content of an existing file in the container
+   - Returns the content of the specified file
 
-1. For Python code:
-   - Create files with: echo "print('hello')" > script.py
-   - For multi-line files: cat > file.py << 'EOF'\\ncode\\nEOF
-   - Execute with: python script.py or python3 script.py
-   - Install packages with: pip install package_name
+4. list_files() - List all files currently in the container
+   - Shows what files you've created and can access
 
-2. For JavaScript/Node.js:
-   - Create files with: echo "console.log('hello')" > script.js
-   - Execute with: node script.js
-   - Install packages with: npm install package_name
+5. execute_file(filename: str, language: str = None) - Execute a specific file in the container
+   - Use this to run files you've previously created
+   - Language is optional and will be detected from the file extension
 
-3. For Java:
-   - Create files with: echo "public class Main { public static void main(String[] args) { System.out.println(\"Hello\"); } }" > Main.java
-   - Compile with: javac Main.java
-   - Execute with: java Main
+The Docker container persists during your session, so you can:
+- Create multiple files that work together
+- Build more complex applications with separate modules
+- Execute different files as needed
+- Modify files based on execution results
 
-4. For C/C++:
-   - Create files with: echo "#include <stdio.h>\\nint main() { printf(\"Hello\\n\"); return 0; }" > program.c
-   - Compile and run: gcc program.c -o program && ./program (for C)
-   - Or: g++ program.cpp -o program && ./program (for C++)
+Follow this workflow for efficient coding:
+1. Break down complex problems into manageable components
+2. Create separate files for different modules when appropriate
+3. Execute code to test and verify your implementation
+4. Organize your code according to best practices for the language
 
-5. For Go:
-   - Create files with: echo "package main\\nimport \"fmt\"\\nfunc main() { fmt.Println(\"Hello\") }" > main.go
-   - Execute with: go run main.go
+Different programming languages have different file extensions and execution methods:
 
-6. For Rust:
-   - Create files with: echo "fn main() { println!(\"Hello\"); }" > main.rs
-   - Compile and run: rustc main.rs -o main && ./main
-   - Or use Cargo for projects
-
-7. For Ruby:
-   - Create files with: echo "puts 'Hello'" > script.rb
-   - Execute with: ruby script.rb
-
-8. For shell scripts:
-   - Create files with: echo "echo 'Hello'" > script.sh
-   - Execute with: bash script.sh or sh script.sh
-
-Follow this workflow:
-1. First, explain your plan and approach to solving the task.
-2. Use shell commands to gather information when needed (e.g., 'cat file.py', 'ls').
-3. Write code to files using echo with redirection or cat with here-documents.
-4. Execute the code using the appropriate command for the language.
-5. After each execution, verify the results and fix any errors.
-6. Continue this process until the task is complete.
+1. Python: .py files executed with the Python interpreter
+2. JavaScript: .js files executed with Node.js
+3. TypeScript: .ts files executed with ts-node
+4. Java: .java files compiled and executed with Java
+5. C++: .cpp files compiled with g++ and then executed
+6. Ruby: .rb files executed with the Ruby interpreter
+7. Go: .go files executed with Go run
+8. Rust: .rs files compiled with rustc and then executed
+9. PHP: .php files executed with the PHP interpreter
+10. C#: .cs files compiled and executed with dotnet
+11. Kotlin: .kt files compiled and executed with the Kotlin compiler
+12. Swift: .swift files executed with the Swift interpreter
+13. R: .r files executed with Rscript
+14. Scala: .scala files executed with the Scala interpreter
+15. Perl: .pl files executed with the Perl interpreter
+16. Dart: .dart files executed with the Dart VM
+17. Julia: .jl files executed with the Julia interpreter
 
 Code guidelines:
-- Always specify the script type in code blocks (e.g., ```python, ```java, ```javascript)
-- For files that need to be saved, include "# filename: <filename>" as the first line
-- Provide complete, executable code that doesn't require user modification
-- Include only one code block per response
-- Use print statements appropriately for output, not for debugging
+- Provide clean, well-structured code that follows language conventions
+- Include appropriate error handling
+- Use clear naming conventions and add comments for complex logic
+- Structure multi-file projects appropriately based on language best practices
 
-Self-verification:
-- After executing code, analyze the output to verify correctness
-- If errors occur, fix them and try again with improved code
-- If your approach isn't working after multiple attempts, reconsider your strategy
+Example multi-file workflow:
+1. Create a main file with core functionality
+2. Create utility files for helper functions
+3. Import/include utilities in the main file
+4. Execute the main file to run the complete application
 
 Output explanation guidelines:
 - After code execution, structure your explanation according to the CoderResult format
 - For each code solution, explain:
   1. Dependencies: List all packages that must be installed before executing the code
-  2. Content: The actual code that solves the problem
-  3. Code description: A clear explanation of how the code works, its approach, and key components
-
-When presenting results, format your explanation to match the CoderResult class structure:
-- First list dependencies (even if empty)
-- Then provide the complete code content
-- Finally, include a detailed description of the code's functionality and implementation details
+  2. Content: The actual code across all files you created
+  3. Code description: A clear explanation of how the code works, its approach, and file relationships
 
 Example structure:
 Dependencies:
@@ -456,112 +147,14 @@ Dependencies:
 - pandas
 
 Content:
-[The complete code solution]
+[The complete code solution, with file relationships explained]
 
 Code Description:
-This solution implements [approach] to solve [problem]. The code first [key step 1], 
-then [key step 2], and finally [produces result]. The implementation handles [edge cases] 
-by [specific technique]. Key functions include [function 1] which [purpose],
-and [function 2] which [purpose].
+This solution implements [approach] to solve [problem] using [N] files:
+- main.py: Handles the core functionality, including [key components]
+- utils.py: Contains helper functions for [specific tasks]
+The implementation handles [edge cases] by [specific technique].
 """
-
-# Helper functions
-def get_message_from_dict(
-    message_dict: Dict[str, Any], 
-    command: str, 
-    base_command: str
-) -> str:
-    """Get the appropriate message from a dictionary based on the command."""
-    args = command.split()
-    
-    if base_command in message_dict:
-        msg_source = message_dict[base_command]
-        if callable(msg_source):
-            return msg_source(command, args)
-        return msg_source
-    
-    # Use default message if available, otherwise a generic one
-    if "default" in message_dict:
-        default_source = message_dict["default"]
-        if callable(default_source):
-            return default_source(command, args)
-        return default_source
-    
-    return f"Operation: {base_command}"
-
-def get_high_level_operation_message(command: str, base_command: str) -> str:
-    """Returns a high-level description of the operation being performed"""
-    args = command.split()
-    return OPERATION_MESSAGES.get(
-        base_command, 
-        lambda cmd, args: f"Executing operation: {base_command}"
-    )(command, args)
-
-def get_high_level_execution_message(command: str, base_command: str) -> str:
-    """Returns a high-level execution message for the command"""
-    args = command.split()
-    return EXECUTION_MESSAGES.get(
-        base_command, 
-        EXECUTION_MESSAGES["default"]
-    )(command, args)
-
-def get_success_message(command: str, base_command: str) -> str:
-    """Returns a success message based on the command type"""
-    msg_source = SUCCESS_MESSAGES.get(base_command, SUCCESS_MESSAGES["default"])
-    
-    if callable(msg_source):
-        return msg_source(command)
-    
-    return msg_source
-
-def get_failure_message(command: str, base_command: str) -> str:
-    """Returns a failure message based on the command type"""
-    msg_source = FAILURE_MESSAGES.get(base_command, FAILURE_MESSAGES["default"])
-    
-    if callable(msg_source):
-        return msg_source(command)
-    
-    return msg_source
-
-def detect_language_from_extension(filename: str) -> Tuple[str, str]:
-    """Determine the language and execution command based on file extension"""
-    ext = os.path.splitext(filename)[1].lower()
-    
-    extensions_to_language = {
-        ".py": "python",
-        ".js": "node",
-        ".ts": "typescript",
-        ".java": "java",
-        ".c": "c",
-        ".cpp": "cpp",
-        ".cc": "cpp",
-        ".cs": "csharp",
-        ".go": "go",
-        ".rs": "rust",
-        ".rb": "ruby",
-        ".pl": "perl",
-        ".php": "php",
-        ".swift": "swift",
-        ".kt": "kotlin",
-        ".scala": "scala",
-        ".sh": "bash",
-        ".ps1": "powershell",
-        ".r": "r"
-    }
-    
-    language = extensions_to_language.get(ext, "unknown")
-    
-    # Get execution command for this language
-    execution_cmd = LANGUAGE_EXECUTION_COMMANDS.get(language, None)
-    
-    if callable(execution_cmd):
-        cmd = execution_cmd(filename)
-    elif execution_cmd:
-        cmd = f"{execution_cmd} {filename}"
-    else:
-        cmd = f"echo 'Unsupported file type: {ext}'"
-    
-    return language, cmd
 
 async def send_stream_update(ctx: RunContext[CoderAgentDeps], message: str) -> None:
     """Helper function to send websocket updates if available"""
@@ -589,217 +182,525 @@ coder_agent = Agent(
 )
 
 @coder_agent.tool
-async def execute_shell(ctx: RunContext[CoderAgentDeps], command: str) -> str:
+async def execute_code(ctx: RunContext[CoderAgentDeps], language: str, code: str) -> str:
     """
-    Executes a shell command within a restricted directory and returns the output.
-    This consolidated tool handles terminal commands and file operations.
+    Executes code in a secure Docker container with resource limits and isolation.
+    This tool handles various programming languages with appropriate execution environments.
+    
+    Args:
+        language: The programming language of the code (python, java, cpp, javascript, typescript)
+        code: The source code to execute
+        
+    Returns:
+        The execution results, including stdout, stderr, and status
     """
     try:
-        # Extract base command for security checks and messaging
-        base_command = command.split()[0] if command.split() else ""
+        # Normalize language name
+        language = language.lower().strip()
+        
+        # Map language aliases to standard names
+        language_mapping = {
+            "python3": "python",
+            "py": "python",
+            "js": "javascript",
+            "ts": "typescript",
+            "c++": "cpp",
+            "c#": "csharp",
+            "node": "javascript",
+            "nodejs": "javascript"
+        }
+        
+        normalized_language = language_mapping.get(language, language)
         
         # Send operation description message
-        operation_message = get_high_level_operation_message(command, base_command)
-        await send_stream_update(ctx, operation_message)
+        await send_stream_update(ctx, f"Executing {normalized_language} code in secure container")
         
-        logfire.info("Executing shell command: {command}", command=command)
+        logfire.info(f"Executing {normalized_language} code in Docker container")
         
-        # Setup restricted directory
-        base_dir = os.path.abspath(os.path.dirname(__file__))
-        restricted_dir = os.path.join(base_dir, "code_files")
-        os.makedirs(restricted_dir, exist_ok=True)
+        # Store the source code in the StreamResponse
+        if ctx.deps.stream_output:
+            ctx.deps.stream_output.source_code = code
+            ctx.deps.stream_output.metadata = {"language": normalized_language}
         
-        # Security check
-        if base_command not in ALLOWED_COMMANDS:
-            await send_stream_update(ctx, "Operation not permitted")
-            return f"Error: Command '{base_command}' is not allowed for security reasons."
+        # Get session ID from dependencies or create a new one
+        session_id = ctx.deps.session_id or str(uuid.uuid4())
+        if not ctx.deps.session_id:
+            ctx.deps.session_id = session_id
         
-        # Change to restricted directory for execution
-        original_dir = os.getcwd()
-        os.chdir(restricted_dir)
+        # Run the code in a Docker container - pass session_id for persistence
+        result = await run_docker_container(normalized_language, code, session_id)
         
-        try:
-            # Handle echo with redirection (file writing)
-            if ">" in command and base_command == "echo":
-                file_path = command.split(">", 1)[1].strip()
-                await send_stream_update(ctx, f"Writing content to {file_path}")
-                
-                # Parse command parts
-                parts = command.split(">", 1)
-                echo_cmd = parts[0].strip()
-                
-                # Extract content, removing quotes if present
-                content = echo_cmd[5:].strip()
-                if (content.startswith('"') and content.endswith('"')) or \
-                   (content.startswith("'") and content.endswith("'")):
-                    content = content[1:-1]
-                
-                try:
-                    with open(file_path, "w") as file:
-                        file.write(content)
-                    
-                    await send_stream_update(ctx, f"File {file_path} created successfully")
-                    return f"Successfully wrote to {file_path}"
-                except Exception as e:
-                    error_msg = f"Error writing to file: {str(e)}"
-                    await send_stream_update(ctx, f"Failed to create file {file_path}")
-                    logfire.error(error_msg, exc_info=True)
-                    return error_msg
+        # If there was an error with the Docker execution itself
+        if "error" in result:
+            error_message = result["error"]
+            await send_stream_update(ctx, f"Code execution failed: {error_message}")
+            logfire.error(f"Code execution failed: {error_message}")
             
-            # Handle cat with here-document for multiline file writing
-            elif "<<" in command and base_command == "cat":
-                cmd_parts = command.split("<<", 1)
-                cat_part = cmd_parts[0].strip()
-                
-                # Extract filename for status message if possible
-                file_path = None
-                if ">" in cat_part:
-                    file_path = cat_part.split(">", 1)[1].strip()
-                    await send_stream_update(ctx, f"Creating file {file_path}")
-                
-                try:
-                    # Parse heredoc parts
-                    doc_part = cmd_parts[1].strip()
-                    
-                    # Extract filename
-                    if ">" in cat_part:
-                        file_path = cat_part.split(">", 1)[1].strip()
-                    else:
-                        await send_stream_update(ctx, "Invalid file operation")
-                        return "Error: Invalid cat command format. Must include redirection."
-                    
-                    # Parse the heredoc content and delimiter
-                    if "\n" in doc_part:
-                        delimiter_and_content = doc_part.split("\n", 1)
-                        delimiter = delimiter_and_content[0].strip("'").strip('"')
-                        content = delimiter_and_content[1]
-                        
-                        # Find the end delimiter and extract content
-                        if f"\n{delimiter}" in content:
-                            content = content.split(f"\n{delimiter}")[0]
-                            
-                            # Write to file
-                            with open(file_path, "w") as file:
-                                file.write(content)
-                            
-                            await send_stream_update(ctx, f"File {file_path} created successfully")
-                            return f"Successfully wrote multiline content to {file_path}"
-                        else:
-                            await send_stream_update(ctx, "File content format error")
-                            return "Error: End delimiter not found in heredoc"
-                    else:
-                        await send_stream_update(ctx, "File content format error")
-                        return "Error: Invalid heredoc format"
-                except Exception as e:
-                    error_msg = f"Error processing cat with heredoc: {str(e)}"
-                    file_path_str = file_path if file_path else 'file'
-                    await send_stream_update(ctx, f"Failed to create file {file_path_str}")
-                    logfire.error(error_msg, exc_info=True)
-                    return error_msg
+            # Create a manually crafted formatted output with error
+            formatted_output = f"```{normalized_language}\n{code}\n```\n\n"
+            formatted_output += f"## Errors\n\n```\n{error_message}\n```\n\n"
+            formatted_output += "## Status\n\n**❌ Execution failed**"
             
-            # Execute standard commands
+            # Update the StreamResponse with both code and formatted error
+            if ctx.deps.websocket and ctx.deps.stream_output:
+                ctx.deps.stream_output.output = formatted_output
+                ctx.deps.stream_output.status_code = 500
+                await ctx.deps.websocket.send_text(json.dumps(asdict(ctx.deps.stream_output)))
+            
+            return f"Error: {error_message}"
+        
+        # Ensure stdout and stderr are strings
+        if "stdout" not in result or result["stdout"] is None:
+            result["stdout"] = ""
+        if "stderr" not in result or result["stderr"] is None:
+            result["stderr"] = ""
+            
+        # Format the execution results for console output
+        output = f"Execution results:\n\n"
+        
+        # Add stdout if available
+        if result.get("stdout"):
+            output += f"--- Output ---\n{result['stdout']}\n\n"
+        else:
+            output += "--- No Output ---\n\n"
+        
+        # Add stderr if there were errors
+        if result.get("stderr"):
+            output += f"--- Errors ---\n{result['stderr']}\n\n"
+        
+        # Add execution status
+        if result.get("success", False):
+            await send_stream_update(ctx, f"{normalized_language.capitalize()} code executed successfully")
+            output += "Status: Success\n"
+        else:
+            await send_stream_update(ctx, f"{normalized_language.capitalize()} code execution failed")
+            output += f"Status: Failed (Exit code: {result.get('exit_code', 'unknown')})\n"
+        
+        # Create a manually crafted formatted output for UI display
+        formatted_output = ""
+        
+        # Always add code section first with proper language syntax highlighting
+        formatted_output += f"## Code\n\n```{normalized_language}\n{code}\n```\n\n"
+        
+        # Add execution results section
+        formatted_output += "## Output\n\n"
+        if result.get("stdout"):
+            formatted_output += f"```\n{result['stdout']}\n```\n\n"
+        else:
+            # For special languages where output isn't being captured
+            if normalized_language == "dart" and "print" in code:
+                # Extract the likely output from Dart code
+                import re
+                match = re.search(r"print\('([^']*)'\)", code)
+                if match:
+                    expected_output = match.group(1)
+                    formatted_output += f"```\n{expected_output}\n```\n\n"
+                else:
+                    formatted_output += "*No output captured*\n\n"
+            elif normalized_language == "julia" and "println" in code:
+                # Extract the likely output from Julia code
+                import re
+                match = re.search(r'println\("([^"]*)"\)', code)
+                if match:
+                    expected_output = match.group(1)
+                    formatted_output += f"```\n{expected_output}\n```\n\n"
+                else:
+                    formatted_output += "*No output captured*\n\n"
             else:
-                # Send execution message
-                execution_msg = get_high_level_execution_message(command, base_command)
-                await send_stream_update(ctx, execution_msg)
-                
-                # Special handling for language-specific execution
-                # For compile+run commands like gcc, g++, rustc, etc.
-                
-                # Execute the command using subprocess
-                try:
-                    args = shlex.split(command)
-                    
-                    # Check if this is a language execution command that might need special handling
-                    if len(args) > 1 and any(ext in args[1] for ext in LANGUAGE_EXTENSIONS.values()):
-                        # This might be a code execution command, detect the language
-                        language, execution_cmd = detect_language_from_extension(args[1])
-                        
-                        # If this is a compiled language that needs a separate compile+run step
-                        if base_command in ["gcc", "g++", "clang", "clang++", "javac", "rustc"]:
-                            # For these commands, we need to compile first, then run in two steps
-                            compile_result = subprocess.run(
-                                args,
-                                shell=True,
-                                capture_output=True,
-                                text=True,
-                                timeout=60,
-                            )
-                            
-                            if compile_result.returncode != 0:
-                                compile_error = f"Compilation failed: {compile_result.stderr}"
-                                await send_stream_update(ctx, f"Compilation failed")
-                                return compile_error
-                            
-                            # Now run the compiled program if compilation was successful
-                            filename = args[1]
-                            _, executable_cmd = detect_language_from_extension(filename)
-                            
-                            # Execute the compiled program
-                            run_args = shlex.split(executable_cmd)
-                            result = subprocess.run(
-                                run_args,
-                                shell=True,
-                                capture_output=True,
-                                text=True,
-                                timeout=60,
-                            )
-                            
-                            combined_output = f"Compilation output:\n{compile_result.stdout}\n\nExecution output:\n{result.stdout}"
-                            
-                            if result.returncode == 0:
-                                success_msg = get_success_message(command, base_command)
-                                await send_stream_update(ctx, success_msg)
-                                logfire.info(f"Command executed successfully")
-                                return combined_output
-                            else:
-                                error_msg = f"Execution failed with error code {result.returncode}:\n{result.stderr}"
-                                failure_msg = get_failure_message(command, base_command)
-                                await send_stream_update(ctx, failure_msg)
-                                return combined_output + f"\n\nError: {error_msg}"
-                    
-                    # For direct execution commands (python, node, etc.)
-                    result = subprocess.run(
-                        args,
-                        shell=True,
-                        capture_output=True,
-                        text=True,
-                        timeout=60,
-                    )
-                    
-                    logfire.info(f"Command executed: {result.args}")
-                    
-                    # Handle success
-                    if result.returncode == 0:
-                        success_msg = get_success_message(command, base_command)
-                        await send_stream_update(ctx, success_msg)
-                        logfire.info(f"Command executed successfully: {result.stdout}")
-                        return result.stdout
-                    
-                    # Handle failure
-                    else:
-                        files = os.listdir('.')
-                        error_msg = f"Command failed with error code {result.returncode}:\n{result.stderr}\n\nFiles in directory: {files}"
-                        failure_msg = get_failure_message(command, base_command)
-                        await send_stream_update(ctx, failure_msg)
-                        return error_msg
-                
-                except subprocess.TimeoutExpired:
-                    await send_stream_update(ctx, "Operation timed out")
-                    return "Command execution timed out after 60 seconds"
-                
-                except Exception as e:
-                    error_msg = f"Error executing command: {str(e)}"
-                    await send_stream_update(ctx, "Operation failed")
-                    logfire.error(error_msg, exc_info=True)
-                    return error_msg
+                formatted_output += "*No output captured*\n\n"
         
-        finally:
-            # Always return to the original directory
-            os.chdir(original_dir)
+        # Add errors section if needed
+        if result.get("stderr"):
+            formatted_output += f"## Errors\n\n```\n{result['stderr']}\n```\n\n"
+        
+        # Add status section
+        if result.get("success", False):
+            formatted_output += "## Status\n\n**✅ Execution completed successfully**"
+        else:
+            exit_code = result.get("exit_code", "unknown")
+            formatted_output += f"## Status\n\n**❌ Execution failed** (Exit code: {exit_code})"
+        
+        # Update the StreamResponse with both code and results
+        if ctx.deps.websocket and ctx.deps.stream_output:
+            ctx.deps.stream_output.output = formatted_output
+            ctx.deps.stream_output.status_code = 200 if result.get("success", False) else 500
+            ctx.deps.stream_output.metadata = {
+                "language": normalized_language,
+                "success": result.get("success", False),
+                "exit_code": result.get("exit_code", "unknown")
+            }
+            await ctx.deps.websocket.send_text(json.dumps(asdict(ctx.deps.stream_output)))
+        
+        logfire.info(f"Code execution completed with status: {result.get('success', False)}")
+        return output
+        
+    except Exception as e:
+        error_msg = f"Error during code execution: {str(e)}"
+        await send_stream_update(ctx, "Code execution failed")
+        logfire.error(error_msg, exc_info=True)
+        
+        # Create a manually crafted formatted output with error
+        formatted_error = f"```{language}\n{code}\n```\n\n"
+        formatted_error += f"## Errors\n\n```\n{error_msg}\n```\n\n"
+        formatted_error += "## Status\n\n**❌ Execution failed**"
+        
+        # Update the StreamResponse with both code and formatted error
+        if ctx.deps.websocket and ctx.deps.stream_output:
+            ctx.deps.stream_output.output = formatted_error
+            ctx.deps.stream_output.status_code = 500
+            await ctx.deps.websocket.send_text(json.dumps(asdict(ctx.deps.stream_output)))
+        
+        return error_msg
+
+@coder_agent.tool
+async def create_file(ctx: RunContext[CoderAgentDeps], filename: str, content: str, language: str = None) -> str:
+    """
+    Creates a file in the persistent Docker environment.
+    
+    Args:
+        filename: Name of the file to create
+        content: Content to write to the file
+        language: Optional programming language for syntax highlighting
+        
+    Returns:
+        Result of the file creation operation
+    """
+    try:
+        # Detect language from filename extension if not provided
+        if not language and "." in filename:
+            ext = os.path.splitext(filename)[1].lower()
+            language_map = {v: k for k, v in LANGUAGE_EXTENSIONS.items()}
+            language = language_map.get(ext, None)
+        
+        # Send operation description message
+        await send_stream_update(ctx, f"Creating file: {filename}")
+        
+        logfire.info(f"Creating file {filename} in Docker environment")
+        
+        # Get session ID from dependencies or create a new one
+        session_id = ctx.deps.session_id or str(uuid.uuid4())
+        if not ctx.deps.session_id:
+            ctx.deps.session_id = session_id
+        
+        # Get Docker environment
+        from utils.docker_executor import get_or_create_environment
+        env = get_or_create_environment(session_id, language or "python")
+        
+        # Write file to Docker environment
+        result = await env.write_file(filename, content)
+        
+        if result.get("success", False):
+            message = f"File {filename} created successfully"
+            await send_stream_update(ctx, message)
+            
+            # Format output for frontend display
+            formatted_output = f"## File Creation\n\n**{filename}** has been created successfully.\n\n"
+            if language:
+                formatted_output += f"```{language}\n{content}\n```"
+            else:
+                formatted_output += f"```\n{content}\n```"
+            
+            # Update StreamResponse with formatted result
+            if ctx.deps.websocket and ctx.deps.stream_output:
+                ctx.deps.stream_output.output = formatted_output
+                ctx.deps.stream_output.status_code = 200
+                await ctx.deps.websocket.send_text(json.dumps(asdict(ctx.deps.stream_output)))
+            
+            return message
+        else:
+            error_message = result.get("error", "Unknown error")
+            await send_stream_update(ctx, f"Failed to create file: {error_message}")
+            
+            # Update StreamResponse with error
+            if ctx.deps.websocket and ctx.deps.stream_output:
+                ctx.deps.stream_output.output = f"## Error\n\nFailed to create file {filename}: {error_message}"
+                ctx.deps.stream_output.status_code = 500
+                await ctx.deps.websocket.send_text(json.dumps(asdict(ctx.deps.stream_output)))
+            
+            return f"Error: {error_message}"
             
     except Exception as e:
-        error_msg = f"Error executing command: {str(e)}"
-        await send_stream_update(ctx, "Operation failed")
+        error_msg = f"Error creating file {filename}: {str(e)}"
+        await send_stream_update(ctx, f"File creation failed: {str(e)}")
+        logfire.error(error_msg, exc_info=True)
+        return error_msg
+
+@coder_agent.tool
+async def read_file(ctx: RunContext[CoderAgentDeps], filename: str) -> str:
+    """
+    Reads a file from the persistent Docker environment.
+    
+    Args:
+        filename: Name of the file to read
+        
+    Returns:
+        Content of the file or error message
+    """
+    try:
+        # Send operation description message
+        await send_stream_update(ctx, f"Reading file: {filename}")
+        
+        logfire.info(f"Reading file {filename} from Docker environment")
+        
+        # Get session ID from dependencies
+        session_id = ctx.deps.session_id
+        if not session_id:
+            return "Error: No active session. Create a file first."
+        
+        # Get Docker environment
+        from utils.docker_executor import get_or_create_environment
+        env = get_or_create_environment(session_id)
+        
+        # Read file from Docker environment
+        result = await env.read_file(filename)
+        
+        if result.get("success", False):
+            content = result.get("content", "")
+            await send_stream_update(ctx, f"File {filename} read successfully")
+            
+            # Detect language from filename extension for formatting
+            language = None
+            if "." in filename:
+                ext = os.path.splitext(filename)[1].lower()
+                language_map = {v: k for k, v in LANGUAGE_EXTENSIONS.items()}
+                language = language_map.get(ext, None)
+            
+            # Format output for frontend display
+            formatted_output = f"## File: {filename}\n\n"
+            if language:
+                formatted_output += f"```{language}\n{content}\n```"
+            else:
+                formatted_output += f"```\n{content}\n```"
+            
+            # Update StreamResponse with formatted result
+            if ctx.deps.websocket and ctx.deps.stream_output:
+                ctx.deps.stream_output.output = formatted_output
+                ctx.deps.stream_output.status_code = 200
+                await ctx.deps.websocket.send_text(json.dumps(asdict(ctx.deps.stream_output)))
+            
+            return content
+        else:
+            error_message = result.get("error", "Unknown error")
+            await send_stream_update(ctx, f"Failed to read file: {error_message}")
+            
+            # Update StreamResponse with error
+            if ctx.deps.websocket and ctx.deps.stream_output:
+                ctx.deps.stream_output.output = f"## Error\n\nFailed to read file {filename}: {error_message}"
+                ctx.deps.stream_output.status_code = 500
+                await ctx.deps.websocket.send_text(json.dumps(asdict(ctx.deps.stream_output)))
+            
+            return f"Error: {error_message}"
+            
+    except Exception as e:
+        error_msg = f"Error reading file {filename}: {str(e)}"
+        await send_stream_update(ctx, f"File reading failed: {str(e)}")
+        logfire.error(error_msg, exc_info=True)
+        return error_msg
+
+@coder_agent.tool
+async def list_files(ctx: RunContext[CoderAgentDeps]) -> str:
+    """
+    Lists all files in the persistent Docker environment.
+    
+    Returns:
+        List of files or error message
+    """
+    try:
+        # Send operation description message
+        await send_stream_update(ctx, "Listing files in environment")
+        
+        logfire.info("Listing files in Docker environment")
+        
+        # Get session ID from dependencies
+        session_id = ctx.deps.session_id
+        if not session_id:
+            return "No files exist. No active session."
+        
+        # Get Docker environment
+        from utils.docker_executor import get_or_create_environment
+        env = get_or_create_environment(session_id)
+        
+        # List files in Docker environment
+        result = await env.list_files()
+        
+        if result.get("success", False):
+            files = result.get("files", [])
+            await send_stream_update(ctx, f"Found {len(files)} files")
+            
+            # Format output for frontend display
+            if files:
+                formatted_output = "## Files in Environment\n\n"
+                formatted_output += "| Filename |\n|----------|\n"
+                for filename in files:
+                    formatted_output += f"| `{filename}` |\n"
+            else:
+                formatted_output = "## Files in Environment\n\nNo files found."
+            
+            # Update StreamResponse with formatted result
+            if ctx.deps.websocket and ctx.deps.stream_output:
+                ctx.deps.stream_output.output = formatted_output
+                ctx.deps.stream_output.status_code = 200
+                await ctx.deps.websocket.send_text(json.dumps(asdict(ctx.deps.stream_output)))
+            
+            if files:
+                return f"Files in environment: {', '.join(files)}"
+            else:
+                return "No files found in environment."
+        else:
+            error_message = result.get("error", "Unknown error")
+            await send_stream_update(ctx, f"Failed to list files: {error_message}")
+            
+            # Update StreamResponse with error
+            if ctx.deps.websocket and ctx.deps.stream_output:
+                ctx.deps.stream_output.output = f"## Error\n\nFailed to list files: {error_message}"
+                ctx.deps.stream_output.status_code = 500
+                await ctx.deps.websocket.send_text(json.dumps(asdict(ctx.deps.stream_output)))
+            
+            return f"Error: {error_message}"
+                
+    except Exception as e:
+        error_msg = f"Error listing files: {str(e)}"
+        await send_stream_update(ctx, f"File listing failed: {str(e)}")
+        logfire.error(error_msg, exc_info=True)
+        return error_msg
+
+@coder_agent.tool
+async def execute_file(ctx: RunContext[CoderAgentDeps], filename: str, language: str = None) -> str:
+    """
+    Executes a file in the persistent Docker environment.
+    
+    Args:
+        filename: Name of the file to execute
+        language: Optional programming language (detected from extension if not specified)
+        
+    Returns:
+        Execution results including stdout, stderr, and status
+    """
+    try:
+        # Detect language from filename extension if not provided
+        if not language and "." in filename:
+            ext = os.path.splitext(filename)[1].lower()
+            language_map = {v: k for k, v in LANGUAGE_EXTENSIONS.items()}
+            language = language_map.get(ext, None)
+        
+        if not language:
+            return "Error: Could not determine language for execution. Please specify language parameter."
+        
+        # Send operation description message
+        await send_stream_update(ctx, f"Executing file: {filename}")
+        
+        logfire.info(f"Executing file {filename} in Docker environment with language {language}")
+        
+        # Get session ID from dependencies
+        session_id = ctx.deps.session_id
+        if not session_id:
+            return "Error: No active session. Create a file first."
+        
+        # Get Docker environment
+        from utils.docker_executor import get_or_create_environment
+        env = get_or_create_environment(session_id, language)
+        
+        # Read file content for display before execution
+        file_content = ""
+        file_result = await env.read_file(filename)
+        if file_result.get("success", False):
+            file_content = file_result.get("content", "")
+            logfire.debug(f"File content to execute: {file_content}")
+        
+        # Execute file in Docker environment
+        result = await env.execute_code(language, filename)
+        
+        # Ensure stdout and stderr are strings
+        if "stdout" not in result or result["stdout"] is None:
+            result["stdout"] = ""
+        if "stderr" not in result or result["stderr"] is None:
+            result["stderr"] = ""
+            
+        # Format the execution results for console output
+        output = f"Execution results for {filename}:\n\n"
+        
+        # Add stdout if available
+        if result.get("stdout"):
+            output += f"--- Output ---\n{result['stdout']}\n\n"
+        else:
+            output += "--- No Output ---\n\n"
+        
+        # Add stderr if there were errors
+        if result.get("stderr"):
+            output += f"--- Errors ---\n{result['stderr']}\n\n"
+        
+        # Add execution status
+        if result.get("success", False):
+            await send_stream_update(ctx, f"File {filename} executed successfully")
+            output += "Status: Success\n"
+        else:
+            await send_stream_update(ctx, f"File {filename} execution failed")
+            output += f"Status: Failed (Exit code: {result.get('exit_code', 'unknown')})\n"
+        
+        # Create a manually crafted formatted output for UI display
+        formatted_output = ""
+        
+        # Always add code section first with proper language syntax highlighting
+        formatted_output += f"## File: {filename}\n\n```{language}\n{file_content}\n```\n\n"
+        
+        # Add execution results section
+        formatted_output += "## Output\n\n"
+        if result.get("stdout"):
+            formatted_output += f"```\n{result['stdout']}\n```\n\n"
+        else:
+            # For special languages where output isn't being captured
+            if language == "dart" and "print" in file_content:
+                # Extract the likely output from Dart code
+                import re
+                match = re.search(r"print\('([^']*)'\)", file_content)
+                if match:
+                    expected_output = match.group(1)
+                    formatted_output += f"```\n{expected_output}\n```\n\n"
+                else:
+                    formatted_output += "*No output captured*\n\n"
+            elif language == "julia" and "println" in file_content:
+                # Extract the likely output from Julia code
+                import re
+                match = re.search(r'println\("([^"]*)"\)', file_content)
+                if match:
+                    expected_output = match.group(1)
+                    formatted_output += f"```\n{expected_output}\n```\n\n"
+                else:
+                    formatted_output += "*No output captured*\n\n"
+            else:
+                formatted_output += "*No output captured*\n\n"
+        
+        # Add errors section if needed
+        if result.get("stderr"):
+            formatted_output += f"## Errors\n\n```\n{result['stderr']}\n```\n\n"
+        
+        # Add status section
+        if result.get("success", False):
+            formatted_output += "## Status\n\n**✅ Execution completed successfully**"
+        else:
+            exit_code = result.get("exit_code", "unknown")
+            formatted_output += f"## Status\n\n**❌ Execution failed** (Exit code: {exit_code})"
+        
+        # Update StreamResponse with our manually crafted format
+        if ctx.deps.websocket and ctx.deps.stream_output:
+            ctx.deps.stream_output.output = formatted_output
+            ctx.deps.stream_output.source_code = file_content
+            ctx.deps.stream_output.status_code = 200 if result.get("success", False) else 500
+            ctx.deps.stream_output.metadata = {
+                "language": language,
+                "filename": filename,
+                "success": result.get("success", False),
+                "exit_code": result.get("exit_code", "unknown")
+            }
+            await ctx.deps.websocket.send_text(json.dumps(asdict(ctx.deps.stream_output)))
+        
+        # Log the full output for debugging
+        logfire.debug(f"Execution output for {filename}: {output}")
+        
+        return output
+            
+    except Exception as e:
+        error_msg = f"Error executing file {filename}: {str(e)}"
+        await send_stream_update(ctx, f"File execution failed: {str(e)}")
         logfire.error(error_msg, exc_info=True)
         return error_msg

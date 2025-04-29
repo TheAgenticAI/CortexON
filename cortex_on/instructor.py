@@ -26,6 +26,7 @@ from agents.web_surfer import WebSurfer
 from utils.ant_client import get_client
 from utils.stream_response_format import StreamResponse
 from agents.mcp_server import server
+from utils.docker_executor import cleanup_environments as docker_cleanup
 load_dotenv()
 
 # Flag to track if MCP server is running
@@ -150,17 +151,14 @@ def register_tools(websocket: WebSocket) -> None:
                 deps=deps_for_coder_agent
             )
 
-            # Extract response data
-            response_data = coder_response.data.content
 
             # Update coder_stream_output with coding results
-            coder_stream_output.output = response_data
             coder_stream_output.status_code = 200
             coder_stream_output.steps.append("Coding task completed successfully")
             await _safe_websocket_send(websocket, coder_stream_output)
 
             # Add a reminder in the result message to update the plan using planner_agent_update
-            response_with_reminder = f"{response_data}\n\nReminder: You must now call planner_agent_update with the completed task description: \"{task} (coder_agent)\""
+            response_with_reminder = f"{coder_response.data.content}\n\nReminder: You must now call planner_agent_update with the completed task description: \"{task} (coder_agent)\""
 
             return response_with_reminder
         except Exception as e:
@@ -350,6 +348,17 @@ def register_tools(websocket: WebSocket) -> None:
     logfire.info(f"Successfully registered {len(tool_definitions)} tools with the MCP server")
 
 
+async def cleanup_docker_environments():
+    """
+    Clean up all active Docker environments
+    """
+    try:
+        await docker_cleanup()
+        logfire.info("Docker environments cleaned up successfully")
+    except Exception as e:
+        logfire.error(f"Failed to clean up Docker environments: {str(e)}")
+
+
 # Main Orchestrator Class
 class SystemInstructor:
     def __init__(self):
@@ -444,6 +453,8 @@ class SystemInstructor:
                 return [{"error": error_msg, "status_code": 500}]
 
         finally:
+            # Clean up Docker environments
+            await cleanup_docker_environments()
             logfire.info("Orchestration process complete")
             # Clear any sensitive data
 
