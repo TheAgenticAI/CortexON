@@ -94,8 +94,29 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
       retryOnError: true,
       shouldReconnect: () => true,
       reconnectInterval: 3000,
+      share: true,
     }
   );
+
+  useEffect(() => {
+    if (readyState === ReadyState.CONNECTING) {
+      if (messages.length > 0) {
+        setIsLoading(true);
+      }
+    } else if (readyState === ReadyState.OPEN) {
+      setIsLoading(false);
+    }
+  }, [readyState, messages.length]);
+
+  useEffect(() => {
+    if (messages.length === 0) {
+      setLiveUrl("");
+      setCurrentOutput(null);
+      setOutputsList([]);
+      setIsLoading(false);
+    }
+  }, [messages.length]);
+
 
   const scrollToBottom = (smooth = true) => {
     if (scrollAreaRef.current) {
@@ -557,7 +578,7 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
                   className="space-y-2 animate-fade-in animate-once animate-duration-500"
                   key={idx}
                 >
-                  {readyState === ReadyState.CONNECTING ? (
+                  {readyState === ReadyState.CONNECTING && messages.length > 0  ? (
                     <>
                       <Skeleton className="h-[3vh] w-[10%] animate-pulse" />
                       <Skeleton className="h-[2vh] w-[80%] animate-pulse animate-delay-100" />

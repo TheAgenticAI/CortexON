@@ -244,27 +244,35 @@ class Orchestrator:
                 """
         )
 
-    async def async_init(self, job_id: str, start_url: str = "https://google.com"):
+    async def async_init(self, job_id: str, start_url: str = "https://google.com", model_preference: str = "Anthropic"):
         """Initialize a new session context with improved error handling"""
         try:
             logger.info("Initializing browser session", extra={
                 "job_id": job_id,
-                "start_url": start_url
+                "start_url": start_url,
+                "model_preference": model_preference
             })
-
-            # 1. Initialize job_id and validate
+            logger.info(f"Starting async_init with model_preference: {model_preference}")
+            
+            # Store and validate parameters
+            self.job_id = job_id
+            
             if not job_id:
-                raise ValueError("job_id is required for initialization")
-            self.job_id = str(job_id)
-            logger.debug(f"job_id: {self.job_id}")
+                raise ValueError("job_id is required")
 
-            # 2. Initialize conversation storage
+            # 1. Create conversation_storage with job_id
             try:
                 self.conversation_storage = ConversationStorage(job_id=self.job_id)
             except Exception as storage_error:
                 raise RuntimeError(f"Failed to initialize conversation storage: {str(storage_error)}") from storage_error
-        
-            # 3. Set and validate URL
+            
+            # 2. Initialize browser manager
+            try:
+                await self.initialize_browser_manager(start_url)
+            except Exception as browser_error:
+                raise RuntimeError(f"Failed to initialize browser: {str(browser_error)}") from browser_error
+
+            # 3. Set current URL and domain
             try:
                 self.current_url = start_url
                 self.current_domain = extract_domain(self.current_url)
@@ -273,23 +281,16 @@ class Orchestrator:
             except InvalidURLError as url_error:
                 raise ValueError(f"Invalid URL provided: {str(url_error)}") from url_error
 
-            # 4. Initialize browser manager with start_url
-            if not self.browser_manager:
-                try:
-                    self.browser_manager = await self.initialize_browser_manager(start_url=start_url)
-                    if not self.browser_manager:
-                        raise RuntimeError("Browser manager initialization failed")
-                except Exception as browser_error:
-                    raise RuntimeError(f"Failed to initialize browser manager: {str(browser_error)}") from browser_error
-
-            # 5. Initialize client and agents
+            # 4. Initialize client and agents
             try:
-                
                 from core.utils.init_client import initialize_client
-                self.client, model_instance = await initialize_client()
+                self.client, model_instance = await initialize_client(model_preference)
                 self.initialize_agents(model_instance)
+                logger.info(f"Agents initialized successfully with model_preference: {model_preference}")
             except Exception as agent_error:
-                raise RuntimeError(f"Failed to initialize client and agents: {str(agent_error)}") from agent_error
+                error_msg = f"Failed to initialize client and agents: {str(agent_error)}"
+                logger.error(f"{error_msg}")
+                raise RuntimeError(error_msg) from agent_error
 
             self.async_init_done = True
             logger.debug("Async initialization completed successfully")

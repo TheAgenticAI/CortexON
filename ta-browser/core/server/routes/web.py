@@ -1,17 +1,19 @@
 import asyncio
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, WebSocket
 from fastapi.responses import StreamingResponse
 from typing import AsyncGenerator
 import json
 import time
 from datetime import datetime
 from queue import Empty
+import os
 
 from core.server.models.web import StreamRequestModel, StreamResponseModel
 from core.server.constants import GLOBAL_TIMEOUT
 from core.server.utils.timeout import timeout
 from core.server.utils.session_tracker import SessionTracker
 from core.utils.logger import Logger
+from core.utils.init_client import initialize_client
 
 logger = Logger()
 
@@ -115,6 +117,7 @@ async def stream_session(
     and streams back real-time updates as the command is executed.
     """
     print(f"[{time.time()}] Stream route: Starting processing")
+    print(f"[STREAM] Received request with model_preference: {request.model_preference}")
     
     session_tracker = SessionTracker()
 
@@ -124,8 +127,12 @@ async def stream_session(
         
         # Initialize the session
         logger.debug(f"Initializing stream session with ID {session_id}")
+        print(f"[STREAM] Initializing session with model_preference: {request.model_preference}")
         session_info = await session_tracker.initialize_session(
-            request.url, request.critique_disabled, session_id
+            request.url, 
+            request.critique_disabled, 
+            session_id,
+            request.model_preference
         )
         
         session_context = session_tracker.active_sessions.get(session_id)
@@ -146,3 +153,4 @@ async def stream_session(
     except Exception as e:
         logger.error(f"Error in /stream: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+

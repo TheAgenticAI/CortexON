@@ -7,6 +7,7 @@ class StreamRequestModel(BaseModel):
     cmd: str = Field(..., description="Command to execute")
     url: str = Field("https://google.com", description="URL to navigate to")
     critique_disabled: bool = Field(False, description="Whether to disable critique")
+    model_preference: str = Field("Anthropic", description="Model provider preference (Anthropic or OpenAI)")
 
     @validator('url')
     def validate_and_format_url(cls, v):

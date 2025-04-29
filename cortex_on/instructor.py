@@ -25,9 +25,6 @@ from utils.stream_response_format import StreamResponse
 
 load_dotenv()
 
-
-
-
 class DateTimeEncoder(json.JSONEncoder):
     """Custom JSON encoder that can handle datetime objects"""
     def default(self, obj):
@@ -38,10 +35,12 @@ class DateTimeEncoder(json.JSONEncoder):
 
 # Main Orchestrator Class
 class SystemInstructor:
-    def __init__(self):
+    def __init__(self, model_preference: str = "Anthropic"):
+        logfire.info(f"Initializing SystemInstructor with model_preference: {model_preference}")
         self.websocket: Optional[WebSocket] = None
         self.stream_output: Optional[StreamResponse] = None
         self.orchestrator_response: List[StreamResponse] = []
+        self.model_preference = model_preference
         self._setup_logging()
 
     def _setup_logging(self) -> None:
@@ -80,7 +79,8 @@ class SystemInstructor:
         deps_for_orchestrator = orchestrator_deps(
             websocket=self.websocket,
             stream_output=stream_output,
-            agent_responses=self.orchestrator_response  # Pass reference to collection
+            agent_responses=self.orchestrator_response,  # Pass reference to collection
+            model_preference=self.model_preference
         )
 
         try:
@@ -88,11 +88,15 @@ class SystemInstructor:
             await self._safe_websocket_send(stream_output)
             stream_output.steps.append("Agents initialized successfully")
             await self._safe_websocket_send(stream_output)
-
-            orchestrator_response = await orchestrator_agent.run(
+            
+            agent = await orchestrator_agent(self.model_preference)
+            orchestrator_response = await agent.run(
                 user_prompt=task,
                 deps=deps_for_orchestrator
             )
+
+            logfire.info(f"Orchestrator Agent using model type: {self.model_preference}")
+
             stream_output.output = orchestrator_response.data
             stream_output.status_code = 200
             logfire.debug(f"Orchestrator response: {orchestrator_response.data}")
@@ -116,15 +120,11 @@ class SystemInstructor:
 
         finally:
             logfire.info("Orchestration process complete")
-            # Clear any sensitive data
+            
+
     async def shutdown(self):
         """Clean shutdown of orchestrator"""
         try:
-            # Close websocket if open
-            if self.websocket:
-                await self.websocket.close()
-            
-            # Clear all responses
             self.orchestrator_response = []
             
             logfire.info("Orchestrator shutdown complete")
