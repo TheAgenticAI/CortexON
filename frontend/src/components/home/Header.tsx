@@ -26,7 +26,7 @@ const Header = () => {
         
         <div
           onClick={() => nav("/vault")}
-          className={`h-full flex justify-center items-center cursor-pointer border-b-2 -mb-[2px] px-4 hover:border-[#BD24CA] ${
+          className={`h-full flex justify-center items-center cursor-pointer border-b-2 -mb-[27px] px-4 pb-7 hover:border-[#BD24CA] ${
             location.includes("/vault")
               ? "border-[#BD24CA]"
               : "border-background"

@@ -167,7 +167,6 @@ async def orchestrator_agent(model_preference: str) -> Agent:
         model = get_openai_model_instance()
     else:
         raise ValueError(f"Unknown model_preference: {model_preference}")
-    print(f"[ORCH_INIT] Creating orchestrator agent with model: {model}")
     orchestrator_agent = Agent(
         model=model,
         name="Orchestrator Agent",
@@ -528,8 +527,6 @@ async def orchestrator_agent(model_preference: str) -> Agent:
 
 
     logfire.info("All tools initialized for orchestrator agent")
-    print(f"[ORCH_INIT] Orchestrator agent initialized successfully: {orchestrator_agent}")
-
     return orchestrator_agent
 
 

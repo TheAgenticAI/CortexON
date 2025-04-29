@@ -183,7 +183,6 @@ async def planner_agent(model_preference: str = "Anthropic") -> Agent:
         model = get_openai_model_instance()
     else:
         raise ValueError(f"Unknown model_preference: {model_preference}")
-    print(f"[PLANNER_INIT] Creating planner agent with model: {model}")
     planner_agent = Agent(
         model=model,
         name="Planner Agent",

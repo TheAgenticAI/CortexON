@@ -28,13 +28,9 @@ async def lifespan(app: FastAPI):
     # Initialize the instructor
     global instructor
     instructor = SystemInstructor(model_preference=MODEL_PREFERENCE)
-    print("[STARTUP] Instructor initialized")
     
     yield
-    
-    # # Cleanup
-    # if instructor:
-    #     await instructor.shutdown()
+
 
 
 app: FastAPI = FastAPI(lifespan=lifespan)
@@ -105,14 +101,12 @@ async def websocket_endpoint(websocket: WebSocket):
                 logfire.info(f"Received message, using model: {model_preference}")
                 await generate_response(data, websocket, model_preference)
             except WebSocketDisconnect:
-                print("[WEBSOCKET] Client disconnected")
+                logfire.info("[WEBSOCKET] Client disconnected")
                 break
             except Exception as e:
-                print(f"[WEBSOCKET] Error handling message: {str(e)}")
+                logfire.error(f"[WEBSOCKET] Error handling message: {str(e)}")
                 if "disconnect message has been received" in str(e):
                     print(f"[WEBSOCKET] DIsconnect detected, closing connection: {str(e)}")
                     break
     except Exception as e:
-        print(f"[WEBSOCKET] Connection error: {str(e)}")
-        # finally:
-        #     print("[WEBSOCKET] connection closed")
+        logfire.error(f"[WEBSOCKET] Connection error: {str(e)}")
