@@ -25,11 +25,6 @@ from utils.stream_response_format import StreamResponse
 
 load_dotenv()
 
-print("[INIT] Loading agents...")
-print(f"[INIT] Planner agent loaded: {planner_agent}")
-print(f"[INIT] Coder agent loaded: {coder_agent}")
-print(f"[INIT] Orchestrator agent loaded: {orchestrator_agent}")
-
 class DateTimeEncoder(json.JSONEncoder):
     """Custom JSON encoder that can handle datetime objects"""
     def default(self, obj):
@@ -47,7 +42,6 @@ class SystemInstructor:
         self.orchestrator_response: List[StreamResponse] = []
         self.model_preference = model_preference
         self._setup_logging()
-        print("[INIT] SystemInstructor initialization complete")
 
     def _setup_logging(self) -> None:
         """Configure logging with proper formatting"""
@@ -94,8 +88,6 @@ class SystemInstructor:
             await self._safe_websocket_send(stream_output)
             stream_output.steps.append("Agents initialized successfully")
             await self._safe_websocket_send(stream_output)
-
-            print("Orchestrator agent running")
             
             agent = await orchestrator_agent(self.model_preference)
             orchestrator_response = await agent.run(
@@ -133,12 +125,6 @@ class SystemInstructor:
     async def shutdown(self):
         """Clean shutdown of orchestrator"""
         try:
-            #Close websocket if open
-            # if self.websocket:
-            #     await self.websocket.close()
-            # logfire.info("websocket shutdown complete")
-            # print("websocket shutdown complete")
-            # Clear all responses
             self.orchestrator_response = []
             
             logfire.info("Orchestrator shutdown complete")

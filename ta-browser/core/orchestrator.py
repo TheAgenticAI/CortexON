@@ -252,7 +252,7 @@ class Orchestrator:
                 "start_url": start_url,
                 "model_preference": model_preference
             })
-            print(f"[ORCHESTRATOR] Starting async_init with model_preference: {model_preference}")
+            logger.info(f"Starting async_init with model_preference: {model_preference}")
             
             # Store and validate parameters
             self.job_id = job_id
@@ -283,15 +283,13 @@ class Orchestrator:
 
             # 4. Initialize client and agents
             try:
-                print(f"[ORCHESTRATOR] Calling initialize_client with model_preference: {model_preference}")
                 from core.utils.init_client import initialize_client
                 self.client, model_instance = await initialize_client(model_preference)
-                print(f"[ORCHESTRATOR] Client initialized successfully, now initializing agents")
                 self.initialize_agents(model_instance)
-                print(f"[ORCHESTRATOR] Agents initialized successfully with model_preference: {model_preference}")
+                logger.info(f"Agents initialized successfully with model_preference: {model_preference}")
             except Exception as agent_error:
                 error_msg = f"Failed to initialize client and agents: {str(agent_error)}"
-                print(f"[ORCHESTRATOR] ERROR: {error_msg}")
+                logger.error(f"{error_msg}")
                 raise RuntimeError(error_msg) from agent_error
 
             self.async_init_done = True

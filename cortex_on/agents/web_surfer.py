@@ -47,7 +47,7 @@ class WebSurfer:
                     "critique_disabled": False,
                     "model_preference": self.model_preference
                 }
-                logfire.info(f"[WEB_SURFER] Making API call with model_preference: {self.model_preference}")
+                logfire.info(f"Making API call with model_preference: {self.model_preference}")
                 async with session.post(self.api_url, json=payload) as response:
                     if response.status != 200:
                         error_text = await response.text()
