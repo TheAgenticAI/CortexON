@@ -147,7 +147,12 @@ services:
   typescript_env:
     container_name: cortexon_typescript_env
     image: node:18-slim
-    command: bash -c "eval \"$SETUP_SCRIPT\" && tail -f /dev/null"
+    command: >
+      bash -c "
+        npm install -g typescript --quiet > /dev/null 2>&1 &&
+        which tsc > /dev/null 2>&1 &&
+        tail -f /dev/null
+      "
     volumes:
       - typescript_code:/app
     working_dir: /app
@@ -159,13 +164,11 @@ services:
           cpus: '0.5'
           memory: 512M
     healthcheck:
-      test: ["CMD", "echo", "healthy"]
+      test: ["CMD", "which", "tsc"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
-    environment:
-      - SETUP_SCRIPT=echo "Setting up TypeScript environment..." && npm install -g typescript && npm install -g axios && echo "TypeScript environment ready!"
 
   ruby_env:
     container_name: cortexon_ruby_env

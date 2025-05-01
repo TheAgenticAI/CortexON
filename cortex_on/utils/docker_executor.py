@@ -87,7 +87,7 @@ class DockerEnvironment:
     """
     def __init__(
         self, 
-        language: str = "python",
+        language: str = "python", 
         work_dir: str = "/app"
     ):
         """
@@ -558,7 +558,7 @@ class DockerEnvironment:
     async def disconnect(self) -> Dict[str, Any]:
         """
         Disconnect from the container (does not stop it)
-        
+            
         Returns:
             Status dictionary
         """
