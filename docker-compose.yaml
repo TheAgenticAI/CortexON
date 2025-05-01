@@ -14,15 +14,7 @@ services:
     network_mode: host
     privileged: true
     depends_on:
-      - python_env
-      - java_env
-      - cpp_env
-      - javascript_env
-      - typescript_env
-      - ruby_env
-      - go_env
-      - rust_env
-      - php_env
+      - multi_language_env
 
   agentic_browser:
     build:
@@ -50,225 +42,30 @@ services:
     restart: always
     network_mode: host
 
-  # Language environments
-  python_env:
-    container_name: cortexon_python_env
-    image: python:3.11-slim
-    command: tail -f /dev/null
+  # Multi-language environment container
+  multi_language_env:
+    container_name: cortexon_multi_env
+    build:
+      context: ./cortex_on/multi_lang_env
+      dockerfile: Dockerfile
     volumes:
-      - python_code:/app
+      - multi_language_code:/app
+      - ./cortex_on/multi_lang_env/setup:/setup
     working_dir: /app
     restart: unless-stopped
     network_mode: host
     deploy:
       resources:
         limits:
-          cpus: '0.5'
-          memory: 512M
+          cpus: '1.0'
+          memory: 2G
     healthcheck:
       test: ["CMD", "echo", "healthy"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
-    environment:
-      - SETUP_SCRIPT=echo "Setting up Python environment..." && apt-get update && apt-get install -y --no-install-recommends python3-pip && pip install numpy pandas matplotlib && echo "Python environment ready!"
-
-  java_env:
-    container_name: cortexon_java_env
-    image: openjdk:17-slim
+      start_period: 60s
     command: tail -f /dev/null
-    volumes:
-      - java_code:/app
-    working_dir: /app
-    restart: unless-stopped
-    network_mode: host
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 512M
-    healthcheck:
-      test: ["CMD", "echo", "healthy"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
-    environment:
-      - SETUP_SCRIPT=echo "Setting up Java environment..." && apt-get update && apt-get install -y --no-install-recommends ca-certificates-java && echo "Java environment ready!"
-
-  cpp_env:
-    container_name: cortexon_cpp_env
-    image: gcc:11-bullseye
-    command: tail -f /dev/null
-    volumes:
-      - cpp_code:/app
-    working_dir: /app
-    restart: unless-stopped
-    network_mode: host
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 512M
-    healthcheck:
-      test: ["CMD", "echo", "healthy"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
-    environment:
-      - SETUP_SCRIPT=echo "Setting up C++ environment..." && apt-get update && apt-get install -y --no-install-recommends build-essential && echo "C++ environment ready!"
-
-  javascript_env:
-    container_name: cortexon_javascript_env
-    image: node:18-slim
-    command: tail -f /dev/null
-    volumes:
-      - javascript_code:/app
-    working_dir: /app
-    restart: unless-stopped
-    network_mode: host
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 512M
-    healthcheck:
-      test: ["CMD", "echo", "healthy"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      
-      start_period: 10s
-    environment:
-      - SETUP_SCRIPT=echo "Setting up JavaScript environment..." && npm install -g axios && echo "JavaScript environment ready!"
-
-  typescript_env:
-    container_name: cortexon_typescript_env
-    image: node:18-slim
-    command: >
-      bash -c "
-        npm install -g typescript --quiet > /dev/null 2>&1 &&
-        which tsc > /dev/null 2>&1 &&
-        tail -f /dev/null
-      "
-    volumes:
-      - typescript_code:/app
-    working_dir: /app
-    restart: unless-stopped
-    network_mode: host
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 512M
-    healthcheck:
-      test: ["CMD", "which", "tsc"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
-
-  ruby_env:
-    container_name: cortexon_ruby_env
-    image: ruby:3.2-slim
-    command: tail -f /dev/null
-    volumes:
-      - ruby_code:/app
-    working_dir: /app
-    restart: unless-stopped
-    network_mode: host
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 512M
-    healthcheck:
-      test: ["CMD", "echo", "healthy"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
-    environment:
-      - SETUP_SCRIPT=echo "Setting up Ruby environment..." && gem install bundler && echo "Ruby environment ready!"
-
-  go_env:
-    container_name: cortexon_go_env
-    image: golang:1.20-bullseye
-    command: tail -f /dev/null
-    volumes:
-      - go_code:/app
-    working_dir: /app
-    restart: unless-stopped
-    network_mode: host
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 512M
-    healthcheck:
-      test: ["CMD", "echo", "healthy"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
-    environment:
-      - SETUP_SCRIPT=echo "Setting up Go environment..." && apt-get update && apt-get install -y --no-install-recommends build-essential && echo "Go environment ready!"
-
-  rust_env:
-    container_name: cortexon_rust_env
-    image: rust:1.70-slim
-    command: tail -f /dev/null
-    volumes:
-      - rust_code:/app
-    working_dir: /app
-    restart: unless-stopped
-    network_mode: host
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 512M
-    healthcheck:
-      test: ["CMD", "echo", "healthy"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
-    environment:
-      - SETUP_SCRIPT=echo "Setting up Rust environment..." && rustup component add rustfmt && echo "Rust environment ready!"
-
-  php_env:
-    container_name: cortexon_php_env
-    image: php:8.2-cli
-    command: tail -f /dev/null
-    volumes:
-      - php_code:/app
-    working_dir: /app
-    restart: unless-stopped
-    network_mode: host
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 512M
-    healthcheck:
-      test: ["CMD", "echo", "healthy"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
-    environment:
-      - SETUP_SCRIPT=echo "Setting up PHP environment..." && apt-get update && apt-get install -y --no-install-recommends php-cli && echo "PHP environment ready!"
 
 volumes:
-  python_code:
-  java_code:
-  cpp_code:
-  javascript_code:
-  typescript_code:
-  ruby_code:
-  go_code:
-  rust_code:
-  php_code:
+  multi_language_code:

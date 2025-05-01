@@ -105,6 +105,7 @@ Code guidelines:
 - Include appropriate error handling
 - Use clear naming conventions and add comments for complex logic
 - Structure multi-file projects appropriately based on language best practices
+- For languages that require the filenames same as the class names, make sure to create the files with the same name as the class name.
 
 Example multi-file workflow:
 1. Create a main file with core functionality

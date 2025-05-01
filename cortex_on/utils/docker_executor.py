@@ -19,49 +19,58 @@ logging.basicConfig(
 # Language configurations
 SUPPORTED_LANGUAGES = {
     "python": {
-        "container_name": "cortexon_python_env",
+        "container_name": "cortexon_multi_env",
         "file_extension": ".py",
-        "execute_cmd": lambda filename: f"python {filename}"
+        "execute_cmd": lambda filename: f"python {filename}",
+        "work_dir": "/app/python"
     },
     "java": {
-        "container_name": "cortexon_java_env",
+        "container_name": "cortexon_multi_env",
         "file_extension": ".java",
-        "execute_cmd": lambda filename: f"java {os.path.splitext(filename)[0]}"
+        "execute_cmd": lambda filename: f"javac {filename} && java -cp . {os.path.splitext(os.path.basename(filename))[0]}",
+        "work_dir": "/app/java"
     },
     "cpp": {
-        "container_name": "cortexon_cpp_env",
+        "container_name": "cortexon_multi_env",
         "file_extension": ".cpp",
-        "execute_cmd": lambda filename: f"g++ {filename} -o /tmp/program"
+        "execute_cmd": lambda filename: f"g++ {filename} -o /tmp/program",
+        "work_dir": "/app/cpp"
     },
     "javascript": {
-        "container_name": "cortexon_javascript_env",
+        "container_name": "cortexon_multi_env",
         "file_extension": ".js",
-        "execute_cmd": lambda filename: f"node {filename}"
+        "execute_cmd": lambda filename: f"node {filename}",
+        "work_dir": "/app/javascript"
     },
     "typescript": {
-        "container_name": "cortexon_typescript_env",
+        "container_name": "cortexon_multi_env",
         "file_extension": ".ts",
-        "execute_cmd": lambda filename: f"tsc {filename} --outFile /tmp/out.js && node /tmp/out.js"
+        "execute_cmd": lambda filename: f"tsc {filename} --outFile /tmp/out.js && node /tmp/out.js",
+        "work_dir": "/app/typescript"
     },
     "ruby": {
-        "container_name": "cortexon_ruby_env",
+        "container_name": "cortexon_multi_env",
         "file_extension": ".rb",
-        "execute_cmd": lambda filename: f"ruby {filename}"
+        "execute_cmd": lambda filename: f"ruby {filename}",
+        "work_dir": "/app/ruby"
     },
     "go": {
-        "container_name": "cortexon_go_env",
+        "container_name": "cortexon_multi_env",
         "file_extension": ".go",
-        "execute_cmd": lambda filename: f"cd {os.path.dirname(filename) or '.'} && go run {os.path.basename(filename)}"
+        "execute_cmd": lambda filename: f"cd {os.path.dirname(filename) or '.'} && go run {os.path.basename(filename)}",
+        "work_dir": "/app/go"
     },
     "rust": {
-        "container_name": "cortexon_rust_env",
+        "container_name": "cortexon_multi_env",
         "file_extension": ".rs",
-        "execute_cmd": lambda filename: f"rustc {filename} -o /tmp/program && /tmp/program"
+        "execute_cmd": lambda filename: f"rustc {filename} -o /tmp/program && /tmp/program",
+        "work_dir": "/app/rust"
     },
     "php": {
-        "container_name": "cortexon_php_env",
+        "container_name": "cortexon_multi_env",
         "file_extension": ".php",
-        "execute_cmd": lambda filename: f"php {filename}"
+        "execute_cmd": lambda filename: f"php {filename}",
+        "work_dir": "/app/php"
     }
 }
 
@@ -77,7 +86,8 @@ LANGUAGE_ALIASES = {
     "golang": "go",
     "rs": "rust",
     "ts": "typescript",
-    "php": "php"
+    "php": "php",
+    "java": "java"
 }
 
 class DockerEnvironment:
@@ -88,19 +98,19 @@ class DockerEnvironment:
     def __init__(
         self, 
         language: str = "python", 
-        work_dir: str = "/app"
+        work_dir: str = None
     ):
         """
         Initialize a connection to a Docker environment
         
         Args:
             language: The primary programming language for this environment
-            work_dir: Working directory in the container
+            work_dir: Working directory in the container (optional, will use language-specific dir if not provided)
         """
         self.client = docker.from_env()
         self.language = language
         self.container_name = SUPPORTED_LANGUAGES[language]["container_name"]
-        self.work_dir = work_dir
+        self.work_dir = work_dir if work_dir else SUPPORTED_LANGUAGES[language]["work_dir"]
         self.files = {}  # Keep track of files in the container
         self.active = False
         self.container = None
@@ -135,10 +145,13 @@ class DockerEnvironment:
             # Create workspace directory if it doesn't exist
             self._exec_command(f"mkdir -p {self.work_dir}")
             
+            # Activate the appropriate language environment
+            self._activate_language_environment()
+            
             return {
                 "success": True, 
                 "container_id": self.container.id,
-                "message": f"Successfully connected to container {self.container_name}"
+                "message": f"Successfully connected to container {self.container_name} and activated {self.language} environment"
             }
             
         except docker.errors.NotFound:
@@ -150,6 +163,24 @@ class DockerEnvironment:
             error_msg = f"Failed to connect to container: {str(e)}"
             logger.error(error_msg, exc_info=True)
             return {"success": False, "error": error_msg}
+    
+    def _activate_language_environment(self):
+        """
+        Activate the appropriate language environment in the container
+        """
+        try:
+            logger.info(f"Activating {self.language} environment in container")
+            
+            # Use the use_env script to activate the environment
+            exit_code, stdout, stderr = self._exec_command(f"use_env {self.language}")
+            
+            if exit_code != 0:
+                logger.error(f"Failed to activate {self.language} environment: {stderr}")
+            else:
+                logger.info(f"Successfully activated {self.language} environment: {stdout}")
+                
+        except Exception as e:
+            logger.error(f"Error activating {self.language} environment: {str(e)}")
     
     def _exec_command(self, cmd: str) -> Tuple[int, str, str]:
         """
@@ -345,6 +376,9 @@ class DockerEnvironment:
             return {"success": False, "error": "Not connected to container"}
         
         try:
+            # Ensure we're in the correct language environment
+            self._activate_language_environment()
+            
             # Check if file exists using a shell-compatible command
             exit_code, stdout, stderr = self._exec_command(f"test -f {filename} && echo 'exists' || echo 'not_exists'")
             
@@ -383,6 +417,9 @@ class DockerEnvironment:
             return {"success": False, "error": "Not connected to container"}
         
         try:
+            # Ensure we're in the correct language environment
+            self._activate_language_environment()
+            
             # Delete the file
             exit_code, stdout, stderr = self._exec_command(f"rm -f {filename}")
             
@@ -415,6 +452,9 @@ class DockerEnvironment:
             return {"success": False, "error": "Not connected to container"}
         
         try:
+            # Ensure we're in the correct language environment
+            self._activate_language_environment()
+            
             # List files - Using a simpler find command that works correctly
             exit_code, stdout, stderr = self._exec_command(f"find '{self.work_dir}' -type f -not -path '*/\\.*'")
             
@@ -467,6 +507,9 @@ class DockerEnvironment:
             exit_code, stdout, stderr = self._exec_command(f"test -f {filename}")
             if exit_code != 0:
                 return {"success": False, "error": f"File {filename} not found"}
+            
+            # Ensure the correct language environment is activated
+            self._activate_language_environment()
             
             # Get execution command for this language
             exec_cmd_generator = SUPPORTED_LANGUAGES[self.language]["execute_cmd"]
@@ -628,6 +671,17 @@ async def run_code(language: str, code: str) -> Dict:
     Returns:
         Dictionary with execution results
     """
+    # Normalize language name
+    language = language.lower().strip()
+    
+    # Map language aliases to standard names
+    language = LANGUAGE_ALIASES.get(language, language)
+    
+    # Check if language is supported
+    if language not in SUPPORTED_LANGUAGES:
+        logger.warning(f"Unsupported language: {language}, falling back to Python")
+        language = "python"
+    
     # Get Docker environment
     env = get_environment(language)
     
@@ -637,9 +691,39 @@ async def run_code(language: str, code: str) -> Dict:
         if not connect_result.get("success", False):
             return {"error": connect_result.get("error", "Failed to connect to container")}
     
+    # Explicitly activate the language environment
+    env._activate_language_environment()
+    
     # Write code to a file with appropriate extension
     extension = SUPPORTED_LANGUAGES[env.language]["file_extension"]
-    filename = f"program{extension}"
+    
+    # Special handling for Java - use class name as filename
+    if language.lower() == 'java':
+        # For Java, we need to use the class name as the filename
+        try:
+            # Look for the main class name
+            # This is a simple check for "public class X" without using regex
+            lines = code.split('\n')
+            class_name = None
+            for line in lines:
+                line = line.strip()
+                if line.startswith('public class '):
+                    parts = line.split('public class ', 1)[1].split('{')[0].strip()
+                    class_name = parts.split()[0].strip()
+                    break
+            
+            if class_name:
+                filename = f"{class_name}{extension}"
+                logger.info(f"Using Java class name as filename: {filename}")
+            else:
+                filename = f"program{extension}"
+                logger.info(f"No Java class name found, using default filename: {filename}")
+        except Exception as e:
+            logger.error(f"Error extracting Java class name: {str(e)}")
+            filename = f"program{extension}"
+    else:
+        filename = f"program{extension}"
+    
     write_result = await env.write_file(filename, code)
     
     if not write_result.get("success", False):
