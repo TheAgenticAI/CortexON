@@ -19,8 +19,8 @@ from pydantic_ai.providers.anthropic import AnthropicProvider
 # Local application imports
 from utils.ant_client import get_client
 from utils.stream_response_format import StreamResponse
-from utils.docker_executor import run_docker_container
 from utils.code_formatter import format_execution_result
+from utils.docker_executor import run_code
 
 load_dotenv()
 
@@ -35,21 +35,7 @@ class CoderAgentDeps:
 LANGUAGE_EXTENSIONS = {
     "python": ".py",
     "java": ".java",
-    "cpp": ".cpp",
-    "javascript": ".js",
-    "typescript": ".ts",
-    "ruby": ".rb",
-    "go": ".go",
-    "rust": ".rs",
-    "php": ".php",
-    "csharp": ".cs",
-    "kotlin": ".kt",
-    "swift": ".swift",
-    "r": ".r",
-    "scala": ".scala",
-    "perl": ".pl",
-    "dart": ".dart",
-    "julia": ".jl"
+    "cpp": ".cpp"
 }
 class CoderResult(BaseModel):
     dependencies: List = Field(
@@ -62,8 +48,8 @@ coder_system_message = """You are a helpful AI assistant with advanced coding ca
 
 <critical>
     - You have access to a secure Docker-based code execution system that runs your code in isolated containers.
-    - The Docker container persists throughout your session, allowing you to create and use multiple files.
-    - All code executes in a secure, isolated environment with limited resources and no network access.
+    - Each programming language has its own dedicated persistent container.
+    - All code executes in a secure, isolated environment with limited resources.
     - Never use interactive input functions like 'input()' in Python or 'read' in Bash.
     - All code must be non-interactive and should execute completely without user interaction.
     - Use command line arguments, environment variables, or file I/O instead of interactive input.
@@ -71,10 +57,10 @@ coder_system_message = """You are a helpful AI assistant with advanced coding ca
 
 You have access to the following tools for code execution and file management:
 
-1. execute_code(language: str, code: str) - Execute code directly in the Docker container
+1. execute_code(language: str, code: str) - Execute code directly in the appropriate language container
    - The code is saved to a file named program.<ext> and executed
-   - Supported languages: python, java, cpp, javascript, typescript, ruby, go, rust, php, csharp, kotlin, swift, r, scala, perl, dart, julia, and more
-   - Resources: 1 CPU core, 512MB RAM, 30 second timeout
+   - Supported languages: python, java, cpp, javascript, typescript, ruby, go, rust, php
+   - Resources: 0.5 CPU core, 512MB RAM, 30 second timeout
 
 2. create_file(filename: str, content: str, language: str = None) - Create a new file in the container
    - Filename should include appropriate extension (e.g., 'utils.py', 'data.json')
@@ -90,7 +76,7 @@ You have access to the following tools for code execution and file management:
    - Use this to run files you've previously created
    - Language is optional and will be detected from the file extension
 
-The Docker container persists during your session, so you can:
+Each language container persists during your session, so you can:
 - Create multiple files that work together
 - Build more complex applications with separate modules
 - Execute different files as needed
@@ -102,25 +88,17 @@ Follow this workflow for efficient coding:
 3. Execute code to test and verify your implementation
 4. Organize your code according to best practices for the language
 
-Different programming languages have different file extensions and execution methods:
+Supported programming languages:
 
-1. Python: .py files executed with the Python interpreter
-2. JavaScript: .js files executed with Node.js
-3. TypeScript: .ts files executed with ts-node
-4. Java: .java files compiled and executed with Java
-5. C++: .cpp files compiled with g++ and then executed
-6. Ruby: .rb files executed with the Ruby interpreter
-7. Go: .go files executed with Go run
-8. Rust: .rs files compiled with rustc and then executed
-9. PHP: .php files executed with the PHP interpreter
-10. C#: .cs files compiled and executed with dotnet
-11. Kotlin: .kt files compiled and executed with the Kotlin compiler
-12. Swift: .swift files executed with the Swift interpreter
-13. R: .r files executed with Rscript
-14. Scala: .scala files executed with the Scala interpreter
-15. Perl: .pl files executed with the Perl interpreter
-16. Dart: .dart files executed with the Dart VM
-17. Julia: .jl files executed with the Julia interpreter
+1. Python (.py) - Python 3.11 with numpy, pandas, matplotlib
+2. Java (.java) - OpenJDK 17
+3. C++ (.cpp) - GCC 11
+4. JavaScript (.js) - Node.js 18 with axios
+5. TypeScript (.ts) - Node.js 18 with typescript
+6. Ruby (.rb) - Ruby 3.2
+7. Go (.go) - Go 1.20
+8. Rust (.rs) - Rust 1.70
+9. PHP (.php) - PHP 8.2
 
 Code guidelines:
 - Provide clean, well-structured code that follows language conventions
@@ -188,7 +166,7 @@ async def execute_code(ctx: RunContext[CoderAgentDeps], language: str, code: str
     This tool handles various programming languages with appropriate execution environments.
     
     Args:
-        language: The programming language of the code (python, java, cpp, javascript, typescript)
+        language: The programming language of the code (python, java, cpp)
         code: The source code to execute
         
     Returns:
@@ -202,15 +180,24 @@ async def execute_code(ctx: RunContext[CoderAgentDeps], language: str, code: str
         language_mapping = {
             "python3": "python",
             "py": "python",
-            "js": "javascript",
-            "ts": "typescript",
             "c++": "cpp",
-            "c#": "csharp",
             "node": "javascript",
-            "nodejs": "javascript"
+            "nodejs": "javascript",
+            "js": "javascript",
+            "rb": "ruby",
+            "golang": "go",
+            "rust": "rust",
+            "php": "php",
+            "ts": "typescript",
         }
         
         normalized_language = language_mapping.get(language, language)
+        
+        # Check if the language is supported
+        if normalized_language not in ["python", "java", "cpp", "javascript", "ruby", "go", "rust", "php", "typescript"]:
+            error_msg = f"Unsupported language: {normalized_language}."
+            await send_stream_update(ctx, error_msg)
+            return error_msg
         
         # Send operation description message
         await send_stream_update(ctx, f"Executing {normalized_language} code in secure container")
@@ -222,13 +209,8 @@ async def execute_code(ctx: RunContext[CoderAgentDeps], language: str, code: str
             ctx.deps.stream_output.source_code = code
             ctx.deps.stream_output.metadata = {"language": normalized_language}
         
-        # Get session ID from dependencies or create a new one
-        session_id = ctx.deps.session_id or str(uuid.uuid4())
-        if not ctx.deps.session_id:
-            ctx.deps.session_id = session_id
-        
-        # Run the code in a Docker container - pass session_id for persistence
-        result = await run_docker_container(normalized_language, code, session_id)
+        # Run the code in a Docker container - we don't need session_id anymore with the new language-based approach
+        result = await run_code(normalized_language, code)
         
         # If there was an error with the Docker execution itself
         if "error" in result:
@@ -287,27 +269,7 @@ async def execute_code(ctx: RunContext[CoderAgentDeps], language: str, code: str
         if result.get("stdout"):
             formatted_output += f"```\n{result['stdout']}\n```\n\n"
         else:
-            # For special languages where output isn't being captured
-            if normalized_language == "dart" and "print" in code:
-                # Extract the likely output from Dart code
-                import re
-                match = re.search(r"print\('([^']*)'\)", code)
-                if match:
-                    expected_output = match.group(1)
-                    formatted_output += f"```\n{expected_output}\n```\n\n"
-                else:
-                    formatted_output += "*No output captured*\n\n"
-            elif normalized_language == "julia" and "println" in code:
-                # Extract the likely output from Julia code
-                import re
-                match = re.search(r'println\("([^"]*)"\)', code)
-                if match:
-                    expected_output = match.group(1)
-                    formatted_output += f"```\n{expected_output}\n```\n\n"
-                else:
-                    formatted_output += "*No output captured*\n\n"
-            else:
-                formatted_output += "*No output captured*\n\n"
+            formatted_output += "*No output captured*\n\n"
         
         # Add errors section if needed
         if result.get("stderr"):
@@ -377,14 +339,16 @@ async def create_file(ctx: RunContext[CoderAgentDeps], filename: str, content: s
         
         logfire.info(f"Creating file {filename} in Docker environment")
         
-        # Get session ID from dependencies or create a new one
-        session_id = ctx.deps.session_id or str(uuid.uuid4())
-        if not ctx.deps.session_id:
-            ctx.deps.session_id = session_id
-        
         # Get Docker environment
-        from utils.docker_executor import get_or_create_environment
-        env = get_or_create_environment(session_id, language or "python")
+        from utils.docker_executor import get_environment
+        env = get_environment(language or "python")
+        
+        # Connect to Docker environment
+        connect_result = await env.connect()
+        if not connect_result.get("success", False):
+            error_message = connect_result.get("error", "Unable to connect to Docker environment")
+            await send_stream_update(ctx, f"Failed to connect to environment: {error_message}")
+            return f"Error: {error_message}"
         
         # Write file to Docker environment
         result = await env.write_file(filename, content)
@@ -437,19 +401,30 @@ async def read_file(ctx: RunContext[CoderAgentDeps], filename: str) -> str:
         Content of the file or error message
     """
     try:
+        # Detect language from filename extension for environment selection
+        language = "python"  # Default
+        if "." in filename:
+            ext = os.path.splitext(filename)[1].lower()
+            language_map = {v: k for k, v in LANGUAGE_EXTENSIONS.items()}
+            detected_lang = language_map.get(ext, None)
+            if detected_lang:
+                language = detected_lang
+        
         # Send operation description message
         await send_stream_update(ctx, f"Reading file: {filename}")
         
         logfire.info(f"Reading file {filename} from Docker environment")
         
-        # Get session ID from dependencies
-        session_id = ctx.deps.session_id
-        if not session_id:
-            return "Error: No active session. Create a file first."
-        
         # Get Docker environment
-        from utils.docker_executor import get_or_create_environment
-        env = get_or_create_environment(session_id)
+        from utils.docker_executor import get_environment
+        env = get_environment(language)
+        
+        # Connect to Docker environment
+        connect_result = await env.connect()
+        if not connect_result.get("success", False):
+            error_message = connect_result.get("error", "Unable to connect to Docker environment")
+            await send_stream_update(ctx, f"Failed to connect to environment: {error_message}")
+            return f"Error: {error_message}"
         
         # Read file from Docker environment
         result = await env.read_file(filename)
@@ -457,13 +432,6 @@ async def read_file(ctx: RunContext[CoderAgentDeps], filename: str) -> str:
         if result.get("success", False):
             content = result.get("content", "")
             await send_stream_update(ctx, f"File {filename} read successfully")
-            
-            # Detect language from filename extension for formatting
-            language = None
-            if "." in filename:
-                ext = os.path.splitext(filename)[1].lower()
-                language_map = {v: k for k, v in LANGUAGE_EXTENSIONS.items()}
-                language = language_map.get(ext, None)
             
             # Format output for frontend display
             formatted_output = f"## File: {filename}\n\n"
@@ -511,14 +479,16 @@ async def list_files(ctx: RunContext[CoderAgentDeps]) -> str:
         
         logfire.info("Listing files in Docker environment")
         
-        # Get session ID from dependencies
-        session_id = ctx.deps.session_id
-        if not session_id:
-            return "No files exist. No active session."
+        # Get Docker environment (use python as default)
+        from utils.docker_executor import get_environment
+        env = get_environment("python")
         
-        # Get Docker environment
-        from utils.docker_executor import get_or_create_environment
-        env = get_or_create_environment(session_id)
+        # Connect to Docker environment
+        connect_result = await env.connect()
+        if not connect_result.get("success", False):
+            error_message = connect_result.get("error", "Unable to connect to Docker environment")
+            await send_stream_update(ctx, f"Failed to connect to environment: {error_message}")
+            return f"Error: {error_message}"
         
         # List files in Docker environment
         result = await env.list_files()
@@ -591,14 +561,16 @@ async def execute_file(ctx: RunContext[CoderAgentDeps], filename: str, language:
         
         logfire.info(f"Executing file {filename} in Docker environment with language {language}")
         
-        # Get session ID from dependencies
-        session_id = ctx.deps.session_id
-        if not session_id:
-            return "Error: No active session. Create a file first."
+        # Get Docker environment for the specific language
+        from utils.docker_executor import get_environment
+        env = get_environment(language)
         
-        # Get Docker environment
-        from utils.docker_executor import get_or_create_environment
-        env = get_or_create_environment(session_id, language)
+        # Connect to Docker environment
+        connect_result = await env.connect()
+        if not connect_result.get("success", False):
+            error_message = connect_result.get("error", "Unable to connect to Docker environment")
+            await send_stream_update(ctx, f"Failed to connect to environment: {error_message}")
+            return f"Error: {error_message}"
         
         # Read file content for display before execution
         file_content = ""
@@ -608,7 +580,7 @@ async def execute_file(ctx: RunContext[CoderAgentDeps], filename: str, language:
             logfire.debug(f"File content to execute: {file_content}")
         
         # Execute file in Docker environment
-        result = await env.execute_code(language, filename)
+        result = await env.execute_code(filename)
         
         # Ensure stdout and stderr are strings
         if "stdout" not in result or result["stdout"] is None:
@@ -648,27 +620,7 @@ async def execute_file(ctx: RunContext[CoderAgentDeps], filename: str, language:
         if result.get("stdout"):
             formatted_output += f"```\n{result['stdout']}\n```\n\n"
         else:
-            # For special languages where output isn't being captured
-            if language == "dart" and "print" in file_content:
-                # Extract the likely output from Dart code
-                import re
-                match = re.search(r"print\('([^']*)'\)", file_content)
-                if match:
-                    expected_output = match.group(1)
-                    formatted_output += f"```\n{expected_output}\n```\n\n"
-                else:
-                    formatted_output += "*No output captured*\n\n"
-            elif language == "julia" and "println" in file_content:
-                # Extract the likely output from Julia code
-                import re
-                match = re.search(r'println\("([^"]*)"\)', file_content)
-                if match:
-                    expected_output = match.group(1)
-                    formatted_output += f"```\n{expected_output}\n```\n\n"
-                else:
-                    formatted_output += "*No output captured*\n\n"
-            else:
-                formatted_output += "*No output captured*\n\n"
+            formatted_output += "*No output captured*\n\n"
         
         # Add errors section if needed
         if result.get("stderr"):

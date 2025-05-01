@@ -16,265 +16,140 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 
-# Image configurations for different languages
-LANGUAGE_IMAGES = {
-    "python": "python:3.9-slim",
-    "java": "openjdk:17-slim",
-    "cpp": "gcc:11-bullseye",
-    "javascript": "node:18-bullseye-slim",
-    "typescript": "node:18-bullseye-slim",
-    # Additional languages
-    "ruby": "ruby:3.2-slim-bullseye",
-    "go": "golang:1.20-bullseye",
-    "rust": "rust:1.68-slim-bullseye",
-    "php": "php:8.2-cli-bullseye",
-    "csharp": "mcr.microsoft.com/dotnet/sdk:7.0-bullseye-slim",
-    "kotlin": "eclipse-temurin:17-jdk-jammy",  # Ubuntu-based with JDK for Kotlin
-    "swift": "swift:5.8-jammy",  # Ubuntu-based
-    "r": "r-base:4.3.0",
-    "scala": "eclipse-temurin:11-jdk-jammy",  # Use Java base image for Scala
-    "perl": "perl:5.36-slim-bullseye",
-    "dart": "debian:bullseye-slim",  # Use Debian for dart installation
-    "julia": "debian:bullseye-slim"  # Use Debian for Julia installation
+# Language configurations
+SUPPORTED_LANGUAGES = {
+    "python": {
+        "container_name": "cortexon_python_env",
+        "file_extension": ".py",
+        "execute_cmd": lambda filename: f"python {filename}"
+    },
+    "java": {
+        "container_name": "cortexon_java_env",
+        "file_extension": ".java",
+        "execute_cmd": lambda filename: f"java {os.path.splitext(filename)[0]}"
+    },
+    "cpp": {
+        "container_name": "cortexon_cpp_env",
+        "file_extension": ".cpp",
+        "execute_cmd": lambda filename: f"g++ {filename} -o /tmp/program"
+    },
+    "javascript": {
+        "container_name": "cortexon_javascript_env",
+        "file_extension": ".js",
+        "execute_cmd": lambda filename: f"node {filename}"
+    },
+    "typescript": {
+        "container_name": "cortexon_typescript_env",
+        "file_extension": ".ts",
+        "execute_cmd": lambda filename: f"tsc {filename} --outFile /tmp/out.js && node /tmp/out.js"
+    },
+    "ruby": {
+        "container_name": "cortexon_ruby_env",
+        "file_extension": ".rb",
+        "execute_cmd": lambda filename: f"ruby {filename}"
+    },
+    "go": {
+        "container_name": "cortexon_go_env",
+        "file_extension": ".go",
+        "execute_cmd": lambda filename: f"cd {os.path.dirname(filename) or '.'} && go run {os.path.basename(filename)}"
+    },
+    "rust": {
+        "container_name": "cortexon_rust_env",
+        "file_extension": ".rs",
+        "execute_cmd": lambda filename: f"rustc {filename} -o /tmp/program && /tmp/program"
+    },
+    "php": {
+        "container_name": "cortexon_php_env",
+        "file_extension": ".php",
+        "execute_cmd": lambda filename: f"php {filename}"
+    }
 }
 
-# File extensions for different languages
-LANGUAGE_EXTENSIONS = {
-    "python": ".py",
-    "java": ".java",
-    "cpp": ".cpp",
-    "javascript": ".js",
-    "typescript": ".ts",
-    # Additional languages
-    "ruby": ".rb",
-    "go": ".go",
-    "rust": ".rs",
-    "php": ".php",
-    "csharp": ".cs",
-    "kotlin": ".kt",
-    "swift": ".swift",
-    "r": ".r",
-    "scala": ".scala",
-    "perl": ".pl",
-    "dart": ".dart",
-    "julia": ".jl"
-}
-
-# Commands to execute code for each language
-EXECUTION_COMMANDS = {
-    "python": lambda filename: f"python {filename}",
-    "java": lambda filename: f"java {os.path.splitext(filename)[0]}",
-    "cpp": lambda filename: f"g++ {filename} -o /tmp/program && /tmp/program",
-    "javascript": lambda filename: f"node {filename}",
-    "typescript": lambda filename: f"npx ts-node {filename}",
-    # Additional languages
-    "ruby": lambda filename: f"ruby {filename}",
-    "go": lambda filename: f"go run {filename}",
-    "rust": lambda filename: f"rustc {filename} -o /tmp/program && /tmp/program",
-    "php": lambda filename: f"php {filename}",
-    "csharp": lambda filename: f"dotnet run {filename}",
-    "kotlin": lambda filename: f"bash -c 'source /root/.sdkman/bin/sdkman-init.sh && kotlinc {filename} -include-runtime -d /tmp/program.jar && java -jar /tmp/program.jar'",
-    "swift": lambda filename: f"swift {filename}",
-    "r": lambda filename: f"Rscript {filename}",
-    "scala": lambda filename: f"scala {filename}",
-    "perl": lambda filename: f"perl {filename}",
-    "dart": lambda filename: f"bash -c 'export PATH=$PATH:/usr/lib/dart/bin && dart run {filename} 2>&1'",
-    "julia": lambda filename: f"bash -c 'export PATH=$PATH:/opt/julia-1.8.5/bin && julia {filename} 2>&1'"
+# Language aliases mapping
+LANGUAGE_ALIASES = {
+    "python3": "python",
+    "py": "python",
+    "c++": "cpp",
+    "node": "javascript",
+    "nodejs": "javascript",
+    "js": "javascript",
+    "rb": "ruby",
+    "golang": "go",
+    "rs": "rust",
+    "ts": "typescript",
+    "php": "php"
 }
 
 class DockerEnvironment:
     """
-    Manages a persistent Docker container for code execution throughout
-    the orchestrator's lifecycle.
+    Connects to a persistent Docker container for code execution.
+    These containers should be defined in the docker-compose.yml.
     """
     def __init__(
         self, 
-        session_id: str = None, 
-        language: str = "python", 
-        resource_limits: Optional[Dict] = None
+        language: str = "python",
+        work_dir: str = "/app"
     ):
         """
-        Initialize a Docker environment with a persistent container
+        Initialize a connection to a Docker environment
         
         Args:
-            session_id: A unique identifier for this session
             language: The primary programming language for this environment
-            resource_limits: Optional dictionary with CPU and memory limits
+            work_dir: Working directory in the container
         """
         self.client = docker.from_env()
-        self.session_id = session_id or str(uuid.uuid4())
-        self.container_name = f"code-env-{self.session_id}"
         self.language = language
-        self.active = False
-        self.work_dir = "/app"
+        self.container_name = SUPPORTED_LANGUAGES[language]["container_name"]
+        self.work_dir = work_dir
         self.files = {}  # Keep track of files in the container
+        self.active = False
+        self.container = None
         
-        # Default resource limits if none provided
-        self.resource_limits = resource_limits or {
-            "cpu": 1.0,       # 1 CPU core
-            "memory": "512m"  # 512MB RAM
-        }
+        logger.info(f"Initialized Docker environment for {self.language}")
         
-        logger.info(f"Initialized Docker environment with session ID: {self.session_id}")
-        
-    async def start(self) -> Dict[str, Any]:
+    async def connect(self) -> Dict[str, Any]:
         """
-        Start the persistent Docker container for this environment
+        Connect to the persistent Docker container for this environment
         
         Returns:
             Status dictionary with success/error information
         """
         if self.active:
-            logger.info(f"Container {self.container_name} is already running")
-            return {"success": True, "message": "Container already running"}
+            logger.info(f"Already connected to container {self.container_name}")
+            return {"success": True, "message": "Already connected"}
         
         try:
-            logger.info(f"Starting persistent container {self.container_name} for {self.language}")
+            logger.info(f"Connecting to container {self.container_name}")
             
-            # Create container from the base image for this language
-            if self.language not in LANGUAGE_IMAGES:
-                error_msg = f"Unsupported language: {self.language}"
-                logger.error(error_msg)
-                return {"success": False, "error": error_msg}
+            # Get container by name
+            self.container = self.client.containers.get(self.container_name)
             
-            image_name = LANGUAGE_IMAGES[self.language]
-            
-            # Run container in interactive mode to keep it alive
-            self.container = self.client.containers.run(
-                image=image_name,
-                name=self.container_name,
-                command="tail -f /dev/null",  # Keep container running indefinitely
-                working_dir=self.work_dir,
-                mem_limit=self.resource_limits["memory"],
-                cpu_quota=int(100000 * self.resource_limits["cpu"]),
-                cpu_period=100000,
-                network_disabled=False,  # Temporarily enable network for package installation
-                detach=True,
-                remove=False,           # Don't auto-remove
-                tty=True,               # Allocate a pseudo-TTY
-                stdout=True,
-                stderr=True,
-                ulimits=[docker.types.Ulimit(name="nproc", soft=50, hard=100)]  # Process limit
-            )
+            # Check if container is running
+            if self.container.status != "running":
+                logger.info(f"Container {self.container_name} is not running, attempting to start")
+                self.container.start()
             
             self.active = True
-            logger.info(f"Container {self.container_name} started successfully")
+            logger.info(f"Successfully connected to container {self.container_name}")
             
             # Create workspace directory if it doesn't exist
             self._exec_command(f"mkdir -p {self.work_dir}")
             
-            # Install necessary dependencies based on the language
-            await self._install_language_dependencies()
-            
-            # Note: We can't disable network after setup using update method
-            # as it doesn't support network_disabled parameter
-            logger.info(f"NOTE: Network access remains enabled for container {self.container_name}")
-            
             return {
                 "success": True, 
                 "container_id": self.container.id,
-                "message": f"Container {self.container_name} started successfully"
+                "message": f"Successfully connected to container {self.container_name}"
             }
             
+        except docker.errors.NotFound:
+            error_msg = f"Container {self.container_name} not found. Make sure it's defined in docker-compose.yml"
+            logger.error(error_msg)
+            return {"success": False, "error": error_msg}
+            
         except Exception as e:
-            error_msg = f"Failed to start container: {str(e)}"
+            error_msg = f"Failed to connect to container: {str(e)}"
             logger.error(error_msg, exc_info=True)
             return {"success": False, "error": error_msg}
-    
-    async def _install_language_dependencies(self) -> None:
-        """
-        Install necessary dependencies for the chosen language
-        """
-        try:
-            # Define installation commands for each language
-            installation_commands = {
-                "python": [
-                    "apt-get update && apt-get install -y --no-install-recommends python3-pip && rm -rf /var/lib/apt/lists/*"
-                ],
-                "javascript": [
-                    "apt-get update && apt-get install -y --no-install-recommends && rm -rf /var/lib/apt/lists/*",
-                    "npm install -g typescript ts-node"
-                ],
-                "typescript": [
-                    "apt-get update && apt-get install -y --no-install-recommends && rm -rf /var/lib/apt/lists/*",
-                    "npm install -g typescript ts-node"
-                ],
-                "java": [
-                    "apt-get update && apt-get install -y --no-install-recommends ca-certificates-java && rm -rf /var/lib/apt/lists/*"
-                ],
-                "cpp": [
-                    "apt-get update && apt-get install -y --no-install-recommends build-essential && rm -rf /var/lib/apt/lists/*"
-                ],
-                "ruby": [
-                    "apt-get update && apt-get install -y --no-install-recommends ruby-dev && rm -rf /var/lib/apt/lists/*"
-                ],
-                "go": [
-                    "apt-get update && apt-get install -y --no-install-recommends && rm -rf /var/lib/apt/lists/*"
-                ],
-                "rust": [
-                    "apt-get update && apt-get install -y --no-install-recommends build-essential && rm -rf /var/lib/apt/lists/*"
-                ],
-                "php": [
-                    "apt-get update && apt-get install -y --no-install-recommends php-cli && rm -rf /var/lib/apt/lists/*"
-                ],
-                "csharp": [
-                    "apt-get update && apt-get install -y --no-install-recommends && rm -rf /var/lib/apt/lists/*"
-                ],
-                "kotlin": [
-                    "apt-get update && apt-get install -y --no-install-recommends curl unzip && rm -rf /var/lib/apt/lists/*",
-                    "curl -s https://get.sdkman.io | bash",
-                    "bash -c 'source /root/.sdkman/bin/sdkman-init.sh && yes | sdk install kotlin'"
-                ],
-                "swift": [
-                    "apt-get update && apt-get install -y --no-install-recommends libcurl4 && rm -rf /var/lib/apt/lists/*"
-                ],
-                "r": [
-                    "apt-get update && apt-get install -y --no-install-recommends && rm -rf /var/lib/apt/lists/*"
-                ],
-                "scala": [
-                    "apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*",
-                    "curl -fL https://github.com/coursier/launchers/raw/master/cs-x86_64-pc-linux.gz | gzip -d > cs && chmod +x cs && ./cs setup -y",
-                    "ln -s /root/.local/share/coursier/bin/scala /usr/local/bin/scala"
-                ],
-                "perl": [
-                    "apt-get update && apt-get install -y --no-install-recommends perl && rm -rf /var/lib/apt/lists/*"
-                ],
-                "dart": [
-                    "apt-get update && apt-get install -y --no-install-recommends apt-transport-https gnupg2 wget && rm -rf /var/lib/apt/lists/*",
-                    "wget -qO- https://dl-ssl.google.com/linux/linux_signing_key.pub | gpg --dearmor > /usr/share/keyrings/dart.gpg",
-                    "echo 'deb [signed-by=/usr/share/keyrings/dart.gpg arch=amd64] https://storage.googleapis.com/download.dartlang.org/linux/debian stable main' > /etc/apt/sources.list.d/dart_stable.list",
-                    "apt-get update && apt-get install -y dart && rm -rf /var/lib/apt/lists/*",
-                    "echo 'export PATH=\"$PATH:/usr/lib/dart/bin\"' >> /root/.bashrc",
-                    "export PATH=\"$PATH:/usr/lib/dart/bin\"",
-                    "dart --version || echo 'Dart installation may have failed'"
-                ],
-                "julia": [
-                    "apt-get update && apt-get install -y --no-install-recommends wget ca-certificates gnupg2 && rm -rf /var/lib/apt/lists/*",
-                    "mkdir -p /opt",
-                    "wget -q https://julialang-s3.julialang.org/bin/linux/x64/1.8/julia-1.8.5-linux-x86_64.tar.gz",
-                    "tar -xzf julia-1.8.5-linux-x86_64.tar.gz -C /opt",
-                    "rm julia-1.8.5-linux-x86_64.tar.gz",
-                    "ln -sf /opt/julia-1.8.5/bin/julia /usr/local/bin/julia",
-                    "echo 'export PATH=\"$PATH:/opt/julia-1.8.5/bin\"' >> /root/.bashrc",
-                    "export PATH=\"$PATH:/opt/julia-1.8.5/bin\"",
-                    "julia --version || echo 'Julia installation may have failed'"
-                ]
-            }
-            
-            # Get installation commands for current language
-            commands = installation_commands.get(self.language, [])
-            
-            if commands:
-                logger.info(f"Installing dependencies for {self.language}")
-                for cmd in commands:
-                    exit_code, stdout, stderr = self._exec_command(cmd)
-                    if exit_code != 0:
-                        logger.warning(f"Failed to execute command '{cmd}': {stderr}")
-            
-            logger.info(f"Dependencies installation completed for {self.language}")
-            
-        except Exception as e:
-            logger.error(f"Error installing dependencies: {str(e)}", exc_info=True)
     
     def _exec_command(self, cmd: str) -> Tuple[int, str, str]:
         """
@@ -287,34 +162,18 @@ class DockerEnvironment:
             Tuple of (exit_code, stdout, stderr)
         """
         if not self.active:
-            logger.error("Cannot execute command: Container not active")
-            return (1, "", "Container not active")
+            logger.error("Cannot execute command: Not connected to container")
+            return (1, "", "Not connected to container")
         
         try:
-            # Create a shell script to ensure proper environment is set
-            env_setup = ""
-            if self.language == "dart":
-                env_setup += "export PATH=$PATH:/usr/lib/dart/bin\n"
-            elif self.language == "julia":
-                env_setup += "export PATH=$PATH:/opt/julia-1.8.5/bin\n"
-            elif self.language == "kotlin":
-                env_setup += "source /root/.sdkman/bin/sdkman-init.sh\n"
+            # Always wrap commands in 'bash -c' but ensure they're simple
+            shell_cmd = ['bash', '-c', cmd]
             
-            # If we need environment setup, wrap the command in a bash script with output redirection
-            if env_setup:
-                # Create a temporary file with the command
-                timestamp = int(time.time())
-                temp_script = f"/tmp/cmd_{timestamp}.sh"
-                # Ensure we redirect output properly and flush it
-                setup_cmd = f"echo '#!/bin/bash\n{env_setup}exec {cmd}' > {temp_script} && chmod +x {temp_script} && {temp_script}"
-                logger.debug(f"Running command with environment setup: {setup_cmd}")
-                exec_cmd = f"bash -c '{setup_cmd}'"
-            else:
-                exec_cmd = cmd
+            logger.info(f"Running command: {cmd}")
             
             # Execute command in container with TTY disabled for proper output capture
             exec_result = self.container.exec_run(
-                cmd=exec_cmd,
+                cmd=shell_cmd,
                 workdir=self.work_dir,
                 demux=True,  # Split stdout and stderr
                 tty=False,   # Disable TTY to ensure proper output capture
@@ -340,20 +199,33 @@ class DockerEnvironment:
             # Try alternate output capture method if output is empty
             if not stdout and not stderr and exit_code == 0:
                 logger.info("No output captured with primary method, trying alternate method")
-                # Use simple cat command to display output captured in a file
-                alt_cmd = f"{cmd} > /tmp/output.txt 2>&1 && cat /tmp/output.txt"
-                alt_result = self.container.exec_run(
-                    cmd=alt_cmd,
-                    workdir=self.work_dir,
-                    demux=False  # Don't split stdout and stderr for this method
+                # Use output redirection to a file and then read it
+                output_file = f"/tmp/output_{int(time.time())}.txt"
+                
+                # Run the command and redirect output to file, then read file
+                alt_cmd1 = f"{cmd} > {output_file} 2>> {output_file}"
+                self.container.exec_run(
+                    cmd=['bash', '-c', alt_cmd1],
+                    workdir=self.work_dir
                 )
+                
+                # Read the output file
+                alt_cmd2 = f"cat {output_file}"
+                alt_result = self.container.exec_run(
+                    cmd=['bash', '-c', alt_cmd2],
+                    workdir=self.work_dir
+                )
+                
                 if alt_result.exit_code == 0 and alt_result.output:
                     stdout = alt_result.output.decode('utf-8', errors='replace')
                     logger.info(f"Alternate method stdout: [{stdout}]")
-            
-            # Clean up temporary script if created
-            if env_setup:
-                self.container.exec_run(f"rm -f {temp_script}")
+                
+                # Clean up
+                alt_cmd3 = f"rm -f {output_file}"
+                self.container.exec_run(
+                    cmd=['bash', '-c', alt_cmd3],
+                    workdir=self.work_dir
+                )
             
             return (exit_code, stdout, stderr)
             
@@ -374,7 +246,7 @@ class DockerEnvironment:
             Status dictionary with success/error information
         """
         if not self.active:
-            await self.start()
+            await self.connect()
         
         try:
             # Create a temporary directory for the file
@@ -406,12 +278,15 @@ class DockerEnvironment:
                 dir_name = os.path.dirname(filename)
                 if dir_name:
                     # Create directory if needed
+                    logger.info(f"Creating directory in container: {os.path.join(self.work_dir, dir_name)}")
                     self._exec_command(f"mkdir -p {os.path.join(self.work_dir, dir_name)}")
                 
                 # Path where to extract the archive
                 extract_path = self.work_dir
                 if dir_name:
                     extract_path = os.path.join(self.work_dir, dir_name)
+                
+                logger.info(f"Extracting file to container path: {extract_path}")
                 
                 # Copy the tar archive to the container
                 result = self.container.put_archive(path=extract_path, data=tar_data)
@@ -423,8 +298,13 @@ class DockerEnvironment:
             
             # Verify the file was created - construct full path for verification
             full_path = os.path.join(self.work_dir, filename)
+            logger.info(f"Verifying file existence at: {full_path}")
             check_cmd = f"test -f '{full_path}' && echo 'success' || echo 'not found'"
             exit_code, stdout, stderr = self._exec_command(check_cmd)
+            
+            # List directory contents for debugging
+            ls_cmd = f"ls -la {os.path.dirname(full_path) or '.'}"
+            self._exec_command(ls_cmd)
             
             if "not found" in stdout:
                 error_msg = f"File verification failed: {full_path} not found"
@@ -462,10 +342,10 @@ class DockerEnvironment:
             Dictionary with file content and success status
         """
         if not self.active:
-            return {"success": False, "error": "Container not active"}
+            return {"success": False, "error": "Not connected to container"}
         
         try:
-            # Check if file exists
+            # Check if file exists using a shell-compatible command
             exit_code, stdout, stderr = self._exec_command(f"test -f {filename} && echo 'exists' || echo 'not_exists'")
             
             if "not_exists" in stdout:
@@ -500,7 +380,7 @@ class DockerEnvironment:
             Status dictionary with success/error information
         """
         if not self.active:
-            return {"success": False, "error": "Container not active"}
+            return {"success": False, "error": "Not connected to container"}
         
         try:
             # Delete the file
@@ -532,7 +412,7 @@ class DockerEnvironment:
             Dictionary with file listing and success status
         """
         if not self.active:
-            return {"success": False, "error": "Container not active"}
+            return {"success": False, "error": "Not connected to container"}
         
         try:
             # List files - Using a simpler find command that works correctly
@@ -569,109 +449,97 @@ class DockerEnvironment:
             logger.error(error_msg, exc_info=True)
             return {"success": False, "error": error_msg}
     
-    async def execute_code(self, language: str, filename: str) -> Dict[str, Any]:
+    async def execute_code(self, filename: str) -> Dict[str, Any]:
         """
         Execute a file in the container
         
         Args:
-            language: Programming language of the file
             filename: Name of the file to execute
             
         Returns:
             Dictionary with execution results
         """
         if not self.active:
-            await self.start()
+            await self.connect()
         
         try:
-            # Normalize language name
-            language = language.lower().strip()
-            
-            # Map language aliases to standard names
-            language_mapping = {
-                "python3": "python",
-                "py": "python",
-                "js": "javascript",
-                "ts": "typescript",
-                "c++": "cpp",
-                "c#": "csharp",
-                "node": "javascript",
-                "nodejs": "javascript",
-                # Additional language aliases
-                "rb": "ruby",
-                "golang": "go",
-                "rs": "rust",
-                "kt": "kotlin",
-                "dotnet": "csharp",
-                "dot-net": "csharp",
-                "pl": "perl",
-                "php7": "php",
-                "php8": "php",
-                "jl": "julia",
-                "dart2": "dart",
-                "scala3": "scala",
-                "r-lang": "r"
-            }
-            
-            normalized_language = language_mapping.get(language, language)
-            
-            # Check if file exists
-            exit_code, stdout, stderr = self._exec_command(f"test -f {filename} && echo 'exists' || echo 'not_exists'")
-            
-            if "not_exists" in stdout:
+            # Check if file exists using simple test command
+            exit_code, stdout, stderr = self._exec_command(f"test -f {filename}")
+            if exit_code != 0:
                 return {"success": False, "error": f"File {filename} not found"}
             
             # Get execution command for this language
-            if normalized_language not in EXECUTION_COMMANDS:
-                return {"success": False, "error": f"Unsupported language: {normalized_language}"}
+            exec_cmd_generator = SUPPORTED_LANGUAGES[self.language]["execute_cmd"]
+            if not exec_cmd_generator:
+                return {"success": False, "error": f"No execution command defined for {self.language}"}
             
-            exec_cmd_generator = EXECUTION_COMMANDS[normalized_language]
-            if callable(exec_cmd_generator):
-                exec_cmd = exec_cmd_generator(filename)
+            # Special handling for C++ to separate compile and run steps
+            if self.language == "cpp":
+                logger.info(f"Compiling C++ file: {filename}")
+                
+                # First compile
+                compile_cmd = exec_cmd_generator(filename)
+                compile_exit_code, compile_stdout, compile_stderr = self._exec_command(compile_cmd)
+                
+                # If compilation failed, return the error
+                if compile_exit_code != 0:
+                    return {
+                        "execution_id": str(uuid.uuid4()),
+                        "language": self.language,
+                        "filename": filename,
+                        "stdout": compile_stdout,
+                        "stderr": compile_stderr,
+                        "exit_code": compile_exit_code,
+                        "success": False
+                    }
+                
+                logger.info(f"C++ compilation successful, running: /tmp/program")
+                
+                # Then run the compiled program
+                run_cmd = "/tmp/program"
+                exit_code, stdout, stderr = self._exec_command(run_cmd)
             else:
-                exec_cmd = f"{exec_cmd_generator} {filename}"
+                # For other languages, execute directly
+                if callable(exec_cmd_generator):
+                    exec_cmd = exec_cmd_generator(filename)
+                else:
+                    exec_cmd = f"{exec_cmd_generator} {filename}"
+                
+                logger.info(f"Executing {filename} with command: {exec_cmd}")
+                
+                # Execute command
+                exit_code, stdout, stderr = self._exec_command(exec_cmd)
             
-            logger.info(f"Executing {filename} with command: {exec_cmd}")
-            
-            # Set the language for the exec_command to use appropriate environment
-            original_language = self.language
-            self.language = normalized_language
-            
-            # Execute the file
-            exit_code, stdout, stderr = self._exec_command(exec_cmd)
-            
-            # For certain languages, handle output specially if there's no stdout
-            if not stdout and exit_code == 0:
-                # Special handling for Julia and Dart
-                if normalized_language == "julia":
-                    # Try to read the file to see the println statement
-                    exit_code_file, stdout_file, _ = self._exec_command(f"cat {filename}")
-                    if exit_code_file == 0 and "println" in stdout_file:
-                        # Extract what should be printed
-                        import re
-                        print_match = re.search(r'println\("([^"]*)"\)', stdout_file)
-                        if print_match:
-                            stdout = f"{print_match.group(1)}\n"
-                            logger.info(f"Extracted expected Julia output: {stdout}")
-                elif normalized_language == "dart":
-                    # Try to read the file to see the print statement
-                    exit_code_file, stdout_file, _ = self._exec_command(f"cat {filename}")
-                    if exit_code_file == 0 and "print" in stdout_file:
-                        # Extract what should be printed
-                        import re
-                        print_match = re.search(r"print\('([^']*)'\)", stdout_file)
-                        if print_match:
-                            stdout = f"{print_match.group(1)}\n"
-                            logger.info(f"Extracted expected Dart output: {stdout}")
-            
-            # Restore original language
-            self.language = original_language
+            # If no output, try with explicit redirection to a file then read it
+            if exit_code == 0 and not stdout and not stderr:
+                logger.info("No output from direct execution, trying with file redirection")
+                output_file = f"/tmp/output_{uuid.uuid4().hex}.txt"
+                
+                if self.language == "cpp":
+                    # For C++, redirect the compiled program output
+                    redirect_cmd = f"/tmp/program > {output_file} 2>> {output_file}"
+                    self._exec_command(redirect_cmd)
+                else:
+                    # For other languages
+                    if callable(exec_cmd_generator):
+                        redirect_cmd = f"{exec_cmd} > {output_file} 2>> {output_file}"
+                        self._exec_command(redirect_cmd)
+                
+                # Read the output file
+                cat_cmd = f"cat {output_file}"
+                cat_result = self._exec_command(cat_cmd)
+                if cat_result[0] == 0 and cat_result[1]:
+                    stdout = cat_result[1]
+                
+                # Clean up
+                rm_cmd = f"rm -f {output_file}"
+                self._exec_command(rm_cmd)
             
             # Return execution results
             execution_id = str(uuid.uuid4())
             result = {
                 "execution_id": execution_id,
-                "language": normalized_language,
+                "language": self.language,
                 "filename": filename,
                 "stdout": stdout,
                 "stderr": stderr,
@@ -687,50 +555,39 @@ class DockerEnvironment:
             logger.error(error_msg, exc_info=True)
             return {"success": False, "error": error_msg}
     
-    async def stop(self, cleanup: bool = True) -> Dict[str, Any]:
+    async def disconnect(self) -> Dict[str, Any]:
         """
-        Stop the container and optionally clean up resources
+        Disconnect from the container (does not stop it)
         
-        Args:
-            cleanup: If True, remove the container
-            
         Returns:
             Status dictionary
         """
         if not self.active:
-            return {"success": True, "message": "Container already stopped"}
+            return {"success": True, "message": "Already disconnected"}
         
         try:
-            # Stop the container
-            self.container.stop(timeout=5)
-            
-            # Remove container if cleanup is enabled
-            if cleanup:
-                self.container.remove(force=True)
-                logger.info(f"Container {self.container_name} removed")
-            
             self.active = False
-            logger.info(f"Container {self.container_name} stopped successfully")
+            self.container = None
+            logger.info(f"Disconnected from container {self.container_name}")
             
             return {
                 "success": True,
-                "message": f"Container {self.container_name} stopped successfully"
+                "message": f"Disconnected from container {self.container_name}"
             }
             
         except Exception as e:
-            error_msg = f"Failed to stop container: {str(e)}"
+            error_msg = f"Failed to disconnect: {str(e)}"
             logger.error(error_msg, exc_info=True)
             return {"success": False, "error": error_msg}
 
-# Global registry to track active Docker environments
+# Global registry to track active Docker environments - indexed by language
 docker_environments = {}
 
-def get_or_create_environment(session_id: str, language: str = "python") -> DockerEnvironment:
+def get_environment(language: str) -> DockerEnvironment:
     """
-    Get an existing Docker environment or create a new one
+    Get an existing Docker environment or create a new connection
     
     Args:
-        session_id: Unique session identifier
         language: Programming language for this environment
         
     Returns:
@@ -738,108 +595,167 @@ def get_or_create_environment(session_id: str, language: str = "python") -> Dock
     """
     global docker_environments
     
-    if session_id in docker_environments:
-        env = docker_environments[session_id]
-        # Check if the environment is for a different language
-        if env.language != language:
-            logger.info(f"Language mismatch for session {session_id}. " 
-                        f"Requested: {language}, Current: {env.language}")
-            # Will be handled by the caller (run_docker_container)
-        return docker_environments[session_id]
-    
-    logger.info(f"Creating new Docker environment for session: {session_id} with language: {language}")
-    env = DockerEnvironment(session_id=session_id, language=language)
-    docker_environments[session_id] = env
-    return env
-
-async def cleanup_environments():
-    """
-    Clean up all active Docker environments
-    """
-    global docker_environments
-    
-    logger.info(f"Cleaning up {len(docker_environments)} Docker environments")
-    
-    for session_id, env in list(docker_environments.items()):
-        try:
-            await env.stop(cleanup=True)
-            logger.info(f"Environment {session_id} cleaned up successfully")
-        except Exception as e:
-            logger.error(f"Failed to clean up environment {session_id}: {str(e)}")
-    
-    docker_environments = {}
-    logger.info("All Docker environments cleaned up")
-
-# Backward compatibility functions
-async def run_docker_container(language: str, code: str, session_id: str = None) -> Dict:
-    """
-    Execute code in a Docker container, maintaining backward compatibility
-    
-    Args:
-        language: Programming language (python, java, cpp, javascript, typescript)
-        code: Source code to execute
-        session_id: Optional session ID for persistent environments
-        
-    Returns:
-        Dictionary with execution results
-    """
-    # Generate a session ID if none provided
-    if not session_id:
-        session_id = str(uuid.uuid4())
-    
     # Normalize language name
     language = language.lower().strip()
     
     # Map language aliases to standard names
-    language_mapping = {
-        "python3": "python",
-        "py": "python",
-        "js": "javascript",
-        "ts": "typescript",
-        "c++": "cpp",
-        "c#": "csharp",
-        "node": "javascript",
-        "nodejs": "javascript",
-        "rb": "ruby",
-        "golang": "go",
-        "rs": "rust",
-        "kt": "kotlin",
-        "dotnet": "csharp",
-        "dot-net": "csharp",
-        "pl": "perl",
-        "php7": "php",
-        "php8": "php",
-        "jl": "julia",
-        "dart2": "dart",
-        "scala3": "scala",
-        "r-lang": "r"
-    }
+    language = LANGUAGE_ALIASES.get(language, language)
     
-    normalized_language = language_mapping.get(language, language)
+    # Check if language is supported
+    if language not in SUPPORTED_LANGUAGES:
+        logger.warning(f"Unsupported language: {language}, falling back to Python")
+        language = "python"
     
-    # Get or create Docker environment with the correct language
-    env = get_or_create_environment(session_id, normalized_language)
+    # Get or create environment for this language
+    if language in docker_environments:
+        env = docker_environments[language]
+        logger.info(f"Reusing existing environment for {language}")
+        return env
     
-    # Check if we need to recreate the environment with a different language
-    if env.language != normalized_language and env.active:
-        logger.info(f"Language change detected from {env.language} to {normalized_language}. Recreating environment.")
-        await env.stop(cleanup=True)
-        # Create a new environment with the correct language
-        env = DockerEnvironment(session_id=session_id, language=normalized_language)
-        docker_environments[session_id] = env
+    logger.info(f"Creating new environment for language: {language}")
+    env = DockerEnvironment(language=language)
+    docker_environments[language] = env
+    return env
+
+async def run_code(language: str, code: str) -> Dict:
+    """
+    Execute code in a Docker container
     
-    # Start the environment if not already active
+    Args:
+        language: Programming language (python, java, cpp, etc.)
+        code: Source code to execute
+        
+    Returns:
+        Dictionary with execution results
+    """
+    # Get Docker environment
+    env = get_environment(language)
+    
+    # Connect to container
     if not env.active:
-        start_result = await env.start()
-        if not start_result.get("success", False):
-            return {"error": start_result.get("error", "Failed to start Docker environment")}
+        connect_result = await env.connect()
+        if not connect_result.get("success", False):
+            return {"error": connect_result.get("error", "Failed to connect to container")}
     
-    # Write code to a file
-    filename = f"program{LANGUAGE_EXTENSIONS.get(normalized_language, '.txt')}"
+    # Write code to a file with appropriate extension
+    extension = SUPPORTED_LANGUAGES[env.language]["file_extension"]
+    filename = f"program{extension}"
     write_result = await env.write_file(filename, code)
     
     if not write_result.get("success", False):
         return {"error": write_result.get("error", "Failed to write code file")}
     
     # Execute the code
-    return await env.execute_code(normalized_language, filename) 
+    return await env.execute_code(filename)
+
+# Function to generate docker-compose config for language environments
+def generate_docker_compose_config() -> str:
+    """
+    Generate docker-compose configuration for all language environments
+    
+    Returns:
+        docker-compose.yml content for language environments
+    """
+    # Start with version and services
+    config = """version: '3'
+
+services:
+"""
+    
+    # Add each language environment
+    for language, info in SUPPORTED_LANGUAGES.items():
+        if language == "python":
+            image = "python:3.11-slim"
+            setup_cmds = "pip install numpy pandas matplotlib"
+        elif language == "java":
+            image = "openjdk:17-slim"
+            setup_cmds = "apt-get update && apt-get install -y --no-install-recommends ca-certificates-java"
+        elif language == "cpp":
+            image = "gcc:11-bullseye"
+            setup_cmds = "apt-get update && apt-get install -y --no-install-recommends build-essential"
+        elif language == "javascript":
+            image = "node:18-slim"
+            setup_cmds = "npm install -g axios"
+        elif language == "typescript":
+            image = "node:18-slim"
+            setup_cmds = "npm install -g typescript axios"
+        elif language == "ruby":
+            image = "ruby:3.2-slim"
+            setup_cmds = "gem install bundler"
+        elif language == "go":
+            image = "golang:1.20-bullseye"
+            setup_cmds = "go get -u github.com/gorilla/mux"
+        elif language == "rust":
+            image = "rust:1.70-slim"
+            setup_cmds = "rustup component add rustfmt"
+        elif language == "php":
+            image = "php:8.2-cli"
+            setup_cmds = "apt-get update && apt-get install -y --no-install-recommends php-cli"
+        else:
+            continue  # Skip unknown languages
+        
+        # Generate configuration for this language
+        container_name = info["container_name"]
+        
+        config += f"""  {language}_env:
+    container_name: {container_name}
+    image: {image}
+    command: tail -f /dev/null
+    volumes:
+      - {language}_code:/app
+    working_dir: /app
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+"""
+        
+        # Add init script
+        setup_script = f"""echo "Setting up {language} environment..."
+{setup_cmds}
+echo "{language} environment ready!"
+"""
+        config += f"""    healthcheck:
+      test: ["CMD", "echo", "healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    environment:
+      - SETUP_SCRIPT={setup_script}
+
+"""
+    
+    # Add volumes section
+    config += "\nvolumes:\n"
+    for language in SUPPORTED_LANGUAGES.keys():
+        config += f"  {language}_code:\n"
+    
+    return config
+
+# Save docker-compose configuration to a file
+def save_docker_compose_config(output_path: str = "docker-compose.lang-env.yml") -> bool:
+    """
+    Save docker-compose configuration for language environments to a file
+    
+    Args:
+        output_path: Path to save the configuration
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        config = generate_docker_compose_config()
+        
+        with open(output_path, "w") as f:
+            f.write(config)
+            
+        logger.info(f"Docker Compose configuration saved to {output_path}")
+        logger.info(f"Run 'docker-compose -f {output_path} up -d' to start all language environments")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Failed to save Docker Compose configuration: {str(e)}")
+        return False 

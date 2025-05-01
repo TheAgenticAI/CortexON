@@ -26,7 +26,6 @@ from agents.web_surfer import WebSurfer
 from utils.ant_client import get_client
 from utils.stream_response_format import StreamResponse
 from agents.mcp_server import server
-from utils.docker_executor import cleanup_environments as docker_cleanup
 load_dotenv()
 
 # Flag to track if MCP server is running
@@ -348,16 +347,6 @@ def register_tools(websocket: WebSocket) -> None:
     logfire.info(f"Successfully registered {len(tool_definitions)} tools with the MCP server")
 
 
-async def cleanup_docker_environments():
-    """
-    Clean up all active Docker environments
-    """
-    try:
-        await docker_cleanup()
-        logfire.info("Docker environments cleaned up successfully")
-    except Exception as e:
-        logfire.error(f"Failed to clean up Docker environments: {str(e)}")
-
 
 # Main Orchestrator Class
 class SystemInstructor:
@@ -453,8 +442,6 @@ class SystemInstructor:
                 return [{"error": error_msg, "status_code": 500}]
 
         finally:
-            # Clean up Docker environments
-            await cleanup_docker_environments()
             logfire.info("Orchestration process complete")
             # Clear any sensitive data
 
