@@ -35,7 +35,13 @@ class CoderAgentDeps:
 LANGUAGE_EXTENSIONS = {
     "python": ".py",
     "java": ".java",
-    "cpp": ".cpp"
+    "cpp": ".cpp",
+    "javascript": ".js",
+    "typescript": ".ts",
+    "ruby": ".rb",
+    "go": ".go",
+    "rust": ".rs",
+    "php": ".php"
 }
 class CoderResult(BaseModel):
     dependencies: List = Field(
