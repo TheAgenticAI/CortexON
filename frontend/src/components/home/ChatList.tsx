@@ -133,7 +133,7 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
       const {agent_name, instructions, steps, output, status_code, live_url} =
         lastJsonMessage as SystemMessage;
 
-      console.log(lastJsonMessage);
+      console.log("Received message:", lastJsonMessage);
 
       if (live_url && liveUrl.length === 0) {
         setCurrentOutput(null);
@@ -195,34 +195,30 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
           setIsLoading(false);
         }
 
-        if (status_code === 200) {
-          setOutputsList((prevList) => {
-            const existingIndex = prevList.findIndex(
-              (item) => item.agent === agent_name
-            );
+        // Update outputs list and show the output immediately
+        setOutputsList((prevList) => {
+          const existingIndex = prevList.findIndex(
+            (item) => item.agent === agent_name
+          );
 
-            let newList;
-            let newOutputIndex;
+          let newList;
+          let newOutputIndex;
 
-            if (existingIndex >= 0) {
-              newList = [...prevList];
-              newList[existingIndex] = {agent: agent_name, output};
-              newOutputIndex = existingIndex;
-            } else {
-              newList = [...prevList, {agent: agent_name, output}];
-              newOutputIndex = newList.length - 1;
-            }
+          if (existingIndex >= 0) {
+            newList = [...prevList];
+            newList[existingIndex] = {agent: agent_name, output};
+            newOutputIndex = existingIndex;
+          } else {
+            newList = [...prevList, {agent: agent_name, output}];
+            newOutputIndex = newList.length - 1;
+          }
 
-            setAnimateOutputEntry(false);
+          // Immediately show the output
+          setCurrentOutput(newOutputIndex);
+          setAnimateOutputEntry(true);
 
-            setTimeout(() => {
-              setCurrentOutput(newOutputIndex);
-              setAnimateOutputEntry(true);
-            }, 300);
-
-            return newList;
-          });
-        }
+          return newList;
+        });
       }
 
       if (agent_name === "Human Input") {
@@ -231,9 +227,7 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
         } else {
           setIsLoading(false);
         }
-        setTimeout(() => {
-          setCurrentOutput(null);
-        }, 300);
+        setCurrentOutput(null);
       }
 
       const updatedMessages = [
@@ -504,7 +498,7 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
   const chatContainerWidth = liveUrl || currentOutput !== null ? "50%" : "65%";
 
   const outputPanelClasses = `border-2 rounded-xl w-[50%] flex flex-col h-[95%] justify-between items-center transition-all duration-700 ease-in-out ${
-    animateOutputEntry
+    animateOutputEntry && currentOutput !== null
       ? "opacity-100 translate-x-0 animate-fade-in animate-once animate-duration-1000"
       : "opacity-0 translate-x-2"
   }`;

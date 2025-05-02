@@ -676,7 +676,7 @@ class Orchestrator:
 
                                 self.log_token_usage(
                                     agent_type='planner',
-                                    usage=planner_response._usage,
+                                    usage=planner_response.usage,
                                     step=self.iteration_counter
                                 )
 
@@ -719,7 +719,7 @@ class Orchestrator:
 
                                     self.log_token_usage(
                                         agent_type='browser',
-                                        usage=browser_response._usage,
+                                        usage=browser_response.usage,
                                         step=self.iteration_counter
                                     )
 
@@ -780,7 +780,7 @@ class Orchestrator:
                                         
                                         self.log_token_usage(
                                             agent_type='critique',
-                                            usage=critique_response._usage,
+                                            usage=critique_response.usage,
                                             step=self.iteration_counter
                                         )
 
