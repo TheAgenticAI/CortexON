@@ -10,15 +10,12 @@
       },
       "description": "GitHub MCP server for repository operations"
   },
-  "google_maps": {
-    "command": "python",
-    "args": [
-      "-m",
-      "mcp_server_maps"
-    ],
-    "env": {
-      "GOOGLE_MAPS_API_KEY": ""
-    },
-    "description": "MCP server for Google Maps operations like geocoding, directions, and place search"
-  }
+  "google-maps": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-google-maps"],
+      "env": {
+        "GOOGLE_MAPS_API_KEY": ""
+      },
+      "description": "Google Maps MCP server for geocoding, directions, and place search"
+    }
 } 
