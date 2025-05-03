@@ -37,6 +37,19 @@ orchestrator_system_prompt = """You are an AI orchestrator that manages a team o
    - Implements technical solutions
    - Executes code operations
 
+3. External MCP servers:
+   - Specialized servers for specific tasks like GitHub operations, Google Maps, etc.
+   - Each server provides its own set of tools that can be accessed with the server name prefix
+   - For example: github.search_repositories, google-maps.geocode
+
+[SERVER SELECTION GUIDELINES]
+When deciding which service or agent to use:
+1. For general code-related tasks: Use coder_agent
+2. For general web browsing tasks: Use web_surfer_agent
+3. For GitHub operations: Use github.* tools (search repos, manage issues, etc.)
+4. For location and maps tasks: Use google-maps.* tools (geocoding, directions, places)
+5. You can use multiple services in sequence for complex tasks
+
 [AVAILABLE TOOLS]
 1. plan_task(task: str) -> str:
    - Plans the given task and assigns it to appropriate agents
@@ -77,6 +90,27 @@ orchestrator_system_prompt = """You are an AI orchestrator that manages a team o
    - Takes the description of the completed task as input
    - Returns the updated plan with completed tasks marked
    - Must be called after each agent completes a task
+
+6. server_status_update(server_name: str, status_message: str, progress: float = 0, details: Dict[str, Any] = None) -> str:
+   - Sends live updates about external server access to the UI
+   - Use when accessing external APIs or MCP servers (like Google Maps, GitHub, etc.)
+   - Parameters:
+     * server_name: Name of the server (e.g., 'google_maps', 'github')
+     * status_message: Short, descriptive status message
+     * progress: Progress percentage (0-100)
+     * details: Optional detailed information
+   - Send frequent updates during lengthy operations
+   - Updates the UI in real-time with server interaction progress
+   - Call this when:
+     * Starting to access a server
+     * Making requests to external APIs
+     * Receiving responses from external systems
+     * Completing server interactions
+   - Examples:
+     * "Connecting to Google Maps API..."
+     * "Fetching location data for New York..."
+     * "Processing route information..."
+     * "Retrieved map data successfully"
 
 [MANDATORY WORKFLOW]
 1. On receiving task:
@@ -176,12 +210,14 @@ model = AnthropicModel(
     provider=provider
 )
 
+# Initialize the agent with just the main MCP server for now
+# External servers will be added dynamically at runtime
 orchestrator_agent = Agent(
     model=model,
     name="Orchestrator Agent",
     system_prompt=orchestrator_system_prompt,
     deps_type=orchestrator_deps,
-   #  mcp_servers=[server],
+    mcp_servers=[server],  # Start with just the main server
 )
 
 # Human Input Tool attached to the orchestrator agent as a tool
@@ -232,6 +268,57 @@ async def ask_human(ctx: RunContext[orchestrator_deps], question: str) -> str:
         await _safe_websocket_send(ctx.deps.websocket, human_stream_output)
         
         return f"Failed to get human input: {error_msg}"
+
+@orchestrator_agent.tool
+async def server_status_update(ctx: RunContext[orchestrator_deps], server_name: str, status_message: str, progress: float = 0, details: Dict[str, Any] = None) -> str:
+    """Send status update about an external server to the UI
+    
+    Args:
+        server_name: Name of the server being accessed (e.g., 'google_maps', 'github')
+        status_message: Short status message to display
+        progress: Progress percentage (0-100)
+        details: Optional detailed information about the server status
+    """
+    try:
+        if server_name == 'npx':
+            logfire.info(f"Server Initialisation with npx. No requirement of sending update to UI")
+            return f"Server Initialisation with npx. No requirement of sending update to UI"
+
+        logfire.info(f"Server status update for {server_name}: {status_message}")
+        if ctx.deps.stream_output is None:
+            return f"Could not send status update: No stream output available"
+            
+        # Initialize server_status if needed
+        if ctx.deps.stream_output.server_status is None:
+            ctx.deps.stream_output.server_status = {}
+            
+        # Create status update
+        status_update = {
+            "status": status_message,
+            "progress": progress,
+            "timestamp": str(uuid.uuid4())  # Generate unique ID for this update
+        }
+        
+        # Add optional details
+        if details:
+            status_update["details"] = details
+            
+        # Update stream_output
+        ctx.deps.stream_output.server_status[server_name] = status_update
+        ctx.deps.stream_output.steps.append(f"Server update from {server_name}: {status_message}")
+        
+        # Send update to WebSocket
+        success = await _safe_websocket_send(ctx.deps.websocket, ctx.deps.stream_output)
+        
+        if success:
+            return f"Successfully sent status update for {server_name}"
+        else:
+            return f"Failed to send status update for {server_name}: WebSocket error"
+            
+    except Exception as e:
+        error_msg = f"Error sending server status update: {str(e)}"
+        logfire.error(error_msg, exc_info=True)
+        return f"Failed to send server status update: {error_msg}"
 
 async def _safe_websocket_send(socket: WebSocket, message: Any) -> bool:
         """Safely send message through websocket with error handling"""

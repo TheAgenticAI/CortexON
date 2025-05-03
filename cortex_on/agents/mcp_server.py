@@ -373,3 +373,51 @@ def register_tools_for_main_mcp_server(websocket: WebSocket, port=None) -> None:
         server_instance._tool_manager.add_tool(fn, name=name, description=desc)
     
     logfire.info(f"Successfully registered {len(tool_definitions)} tools with the MCP server on port {port or server_manager.default_port}")
+    
+
+def get_unique_tool_name(tool_name: str, registered_names: set) -> str:
+    """Ensure a tool name is unique by adding a suffix if necessary"""
+    if tool_name not in registered_names:
+        return tool_name
+    
+    # Add numeric suffix to make the name unique
+    base_name = tool_name
+    suffix = 1
+    while f"{base_name}_{suffix}" in registered_names:
+        suffix += 1
+    return f"{base_name}_{suffix}"
+
+def check_mcp_server_tools(server, registered_tools: set) -> None:
+    """Check and fix duplicate tool names in an MCP server"""
+    try:
+        # This relies on implementation details of MCP Server
+        if hasattr(server, '_mcp_api') and server._mcp_api:
+            api = server._mcp_api
+            
+            # Check if API has a tool manager
+            if hasattr(api, '_tool_manager'):
+                tool_manager = api._tool_manager
+                
+                # Check if the tool manager has tools
+                if hasattr(tool_manager, '_tools') and tool_manager._tools:
+                    # Get a copy of original tool names
+                    original_tools = list(tool_manager._tools.keys())
+                    for tool_name in original_tools:
+                        # If this tool name conflicts with existing ones
+                        if tool_name in registered_tools:
+                            # Create a unique name
+                            unique_name = get_unique_tool_name(tool_name, registered_tools)
+                            # Get the tool
+                            tool = tool_manager._tools[tool_name]
+                            # Add it with the new name
+                            tool_manager._tools[unique_name] = tool
+                            # Remove the old one
+                            del tool_manager._tools[tool_name]
+                            # Add the new name to the registry
+                            registered_tools.add(unique_name)
+                            logfire.info(f"Renamed tool {tool_name} to {unique_name} to avoid duplicate")
+                        else:
+                            # Add the name to the registry
+                            registered_tools.add(tool_name)
+    except Exception as e:
+        logfire.error(f"Error checking MCP server tools: {str(e)}")

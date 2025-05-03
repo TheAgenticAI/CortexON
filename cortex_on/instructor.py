@@ -15,18 +15,12 @@ from dotenv import load_dotenv
 from fastapi import WebSocket
 import logfire
 from pydantic import BaseModel
-from pydantic_ai import Agent
-from pydantic_ai.messages import ModelMessage
-from pydantic_ai.models.anthropic import AnthropicModel
-from mcp.server.fastmcp import FastMCP
-from pydantic_ai.mcp import MCPServerHTTP
 
 # Local application imports
 from agents.orchestrator_agent import orchestrator_agent, orchestrator_deps, orchestrator_system_prompt
 from utils.stream_response_format import StreamResponse
-from agents.mcp_server import start_mcp_server, register_tools_for_main_mcp_server, server_manager
+from agents.mcp_server import start_mcp_server, register_tools_for_main_mcp_server, server_manager, check_mcp_server_tools
 from connect_to_external_server import server_provider
-from prompts import time_server_prompt
 load_dotenv()
 
 class DateTimeEncoder(json.JSONEncoder):
@@ -72,6 +66,81 @@ class SystemInstructor:
         except Exception as e:
             logfire.error(f"WebSocket send failed: {str(e)}")
             return False
+    async def send_server_status_update(self, stream_output: StreamResponse, server_name: str, status: Dict[str, Any]) -> bool:
+        """Send server status update via WebSocket
+        
+        Args:
+            stream_output: The StreamResponse object to update
+            server_name: Name of the server being accessed
+            status: Status information to stream
+        """
+        try:
+            # Ensure we have a server_status dictionary
+            if not hasattr(stream_output, 'server_status') or stream_output.server_status is None:
+                stream_output.server_status = {}
+            
+            # Add a timestamp to the status update
+            status_with_timestamp = {**status, "timestamp": datetime.now().isoformat()}
+            
+            # Update the status in the stream_output
+            stream_output.server_status[server_name] = status_with_timestamp
+            
+            # Add a step message for non-npx servers or if it's an important status
+            important_statuses = ["ready", "error", "failed", "connected"]
+            if server_name != 'npx' or status.get('status', '') in important_statuses:
+                stream_output.steps.append(f"Server update from {server_name}: {status.get('status', 'processing')}")
+            
+            # Make sure the WebSocket is still connected
+            if self.websocket and self.websocket.client_state.CONNECTED:
+                # Send the update and retry if needed
+                max_retries = 3
+                for attempt in range(max_retries):
+                    try:
+                        # Try to send the message
+                        await self.websocket.send_text(json.dumps(asdict(stream_output)))
+                        logfire.debug(f"Server status update sent for {server_name}: {status.get('status')}")
+                        return True
+                    except Exception as send_err:
+                        if attempt < max_retries - 1:
+                            # Brief wait before retry
+                            await asyncio.sleep(0.1 * (attempt + 1))
+                            logfire.warning(f"Retrying server status update ({attempt+1}/{max_retries})")
+                        else:
+                            # Last attempt failed
+                            logfire.error(f"Failed to send server status update after {max_retries} attempts: {str(send_err)}")
+                            return False
+            else:
+                logfire.warning(f"WebSocket disconnected, couldn't send status update for {server_name}")
+                return False
+                
+        except Exception as e:
+            logfire.error(f"Failed to send server status update: {str(e)}")
+            return False
+        
+    def _reset_orchestrator_agent(self):
+        """Reset the orchestrator agent for a new chat session"""
+        try:
+            # Keep only the main server (first one) and remove all external servers
+            if len(orchestrator_agent._mcp_servers) > 1:
+                main_server = orchestrator_agent._mcp_servers[0]
+                orchestrator_agent._mcp_servers = [main_server]
+                logfire.info("Reset orchestrator_agent MCP servers to just the main server")
+            
+            # Reset the system prompt to its original state
+            orchestrator_agent.system_prompt = orchestrator_system_prompt
+            logfire.info("Reset orchestrator_agent system prompt to default")
+            
+            # If there's a tools manager, clear any cache it might have
+            for server in orchestrator_agent._mcp_servers:
+                if hasattr(server, '_mcp_api') and server._mcp_api:
+                    api = server._mcp_api
+                    if hasattr(api, '_tool_manager'):
+                        tool_manager = api._tool_manager
+                        if hasattr(tool_manager, '_cached_tool_schemas'):
+                            tool_manager._cached_tool_schemas = None
+                            logfire.info(f"Cleared tool schema cache for server {server}")
+        except Exception as e:
+            logfire.error(f"Error resetting orchestrator agent: {str(e)}")
 
     async def run(self, task: str, websocket: WebSocket, server_config: Optional[Dict[str, int]] = None) -> List[Dict[str, Any]]:
         """
@@ -82,6 +151,9 @@ class SystemInstructor:
             websocket: The active WebSocket connection
             server_config: Optional configuration for MCP servers {name: port}
         """
+        # Reset the orchestrator agent to ensure we start fresh for each new chat
+        # self._reset_orchestrator_agent()
+        
         self.websocket = websocket
         stream_output = StreamResponse(
             agent_name="Orchestrator",
@@ -91,8 +163,8 @@ class SystemInstructor:
             status_code=0,
             message_id=str(uuid.uuid4())
         )
-        self.orchestrator_response.append(stream_output)
-
+        self.orchestrator_response = [stream_output]  # Reset the response list for new chat
+        
         # Create dependencies with list to track agent responses
         deps_for_orchestrator = orchestrator_deps(
             websocket=self.websocket,
@@ -119,12 +191,74 @@ class SystemInstructor:
             
             # Start each configured external MCP server
             servers, system_prompt = await server_provider.load_servers()
-            orchestrator_agent._mcp_servers = servers
-            orchestrator_agent.system_prompt = orchestrator_system_prompt + "\n\n" + system_prompt
+            
+            # Send status update for each server being loaded
+            for i, server in enumerate(servers):
+                server_name = server.command.split('/')[-1] if hasattr(server, 'command') else f"server_{i}"
+                await self.send_server_status_update(
+                    stream_output,
+                    server_name, 
+                    {"status": "initializing", "progress": i/len(servers)*100}
+                )
+            
+            # We need to make sure each MCP server has unique tool names
+            # First, check the main MCP server's tools
+            registered_tools = set()
+            main_server = orchestrator_agent._mcp_servers[0]
+            check_mcp_server_tools(main_server, registered_tools)
+            
+            # Now add each external server and check its tools
+            for server in servers:
+                # Check and deduplicate tools before adding
+                check_mcp_server_tools(server, registered_tools)
+                # Adding one at a time after checking
+                orchestrator_agent._mcp_servers.append(server)
+                logfire.info(f"Added MCP server: {server.__class__.__name__}")
+            
+            # Properly integrate external server capabilities into the system prompt
+            updated_system_prompt = orchestrator_system_prompt
+            if system_prompt and system_prompt.strip():
+                if "[AVAILABLE TOOLS]" in updated_system_prompt:
+                    sections = updated_system_prompt.split("[AVAILABLE TOOLS]")
+                    updated_system_prompt = sections[0] + system_prompt + "\n\n[AVAILABLE TOOLS]" + sections[1]
+                else:
+                    # If we can't find the section, just append to the end (fallback)
+                    updated_system_prompt = updated_system_prompt + "\n\n" + system_prompt
+            
+            orchestrator_agent.system_prompt = updated_system_prompt
             logfire.info(f"Updated orchestrator agent with {len(servers)} MCP servers. Current MCP servers: {orchestrator_agent._mcp_servers}")
-
             # Configure orchestrator_agent to use all configured MCP servers
+            logfire.info("Starting to register MCP server tools with Claude")
+            
+            # Send another status update before starting MCP servers
+            for i, server in enumerate(servers):
+                server_name = server.command.split('/')[-1] if hasattr(server, 'command') else f"server_{i}"
+                await self.send_server_status_update(
+                    stream_output,
+                    server_name, 
+                    {"status": "connecting", "progress": 50 + i/len(servers)*25}
+                )
+                await asyncio.sleep(0.1)  # Brief pause to allow updates to be sent
+            
             async with orchestrator_agent.run_mcp_servers():
+                # Send status update that servers are ready
+                for i, server in enumerate(servers):
+                    server_name = server.command.split('/')[-1] if hasattr(server, 'command') else f"server_{i}"
+                    await self.send_server_status_update(
+                        stream_output,
+                        server_name, 
+                        {"status": "ready", "progress": 100}
+                    )
+                    await asyncio.sleep(0.1)  # Brief pause to allow updates to be sent
+                    
+                    # Start monitoring this server's status in the background
+                    asyncio.create_task(
+                        server_provider.monitor_server_status(
+                            server_name,
+                            lambda s, status: self.send_server_status_update(stream_output, s, status)
+                        )
+                    )
+                                
                 orchestrator_response = await orchestrator_agent.run(
                     user_prompt=task,
                     deps=deps_for_orchestrator
@@ -138,6 +272,14 @@ class SystemInstructor:
             return [json.loads(json.dumps(asdict(i), cls=DateTimeEncoder)) for i in self.orchestrator_response]
         
         except Exception as e:
+            if "WebSocketDisconnect" in str(e):
+                logfire.info("WebSocket disconnected. Client likely closed the connection.")
+                try:
+                    await self.shutdown()
+                except Exception as shutdown_err:
+                    logfire.error(f"Error during cleanup after disconnect: {shutdown_err}")
+                return [json.loads(json.dumps(asdict(i), cls=DateTimeEncoder)) for i in self.orchestrator_response]
+            
             error_msg = f"Critical orchestration error: {str(e)}\n{traceback.format_exc()}"
             logfire.error(error_msg)
             
@@ -147,7 +289,6 @@ class SystemInstructor:
                 self.orchestrator_response.append(stream_output)
                 await self._safe_websocket_send(stream_output)
             
-            # Even in case of critical error, return what we have
             try:
                 return [json.loads(json.dumps(asdict(i), cls=DateTimeEncoder)) for i in self.orchestrator_response]
             except Exception as serialize_error:
@@ -161,6 +302,12 @@ class SystemInstructor:
     async def shutdown(self):
         """Clean shutdown of orchestrator"""
         try:
+            # Reset the orchestrator agent
+            self._reset_orchestrator_agent()
+            
+            # Shut down all external MCP servers
+            await server_provider.shutdown_servers()
+            
             # Close websocket if open
             if self.websocket:
                 await self.websocket.close()
