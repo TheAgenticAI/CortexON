@@ -112,7 +112,8 @@ This project uses HashiCorp Cloud Platform (HCP) Vault for secure secrets manage
 #### WebSocket
 - `VITE_WEBSOCKET_URL=ws://localhost:8081/ws`
 
-#### Configuring External MCP Servers (OPTIONAL)
+---
+### Configuring External MCP Servers (OPTIONAL)
 
 CortexON supports integration with external MCP (Model Context Protocol) servers for extended capabilities. Configure these in the `cortex_on/config/external_mcp_servers.json` file.
 
@@ -173,6 +174,8 @@ CortexON supports integration with external MCP (Model Context Protocol) servers
 6. **Sample Queries**
   - Find the closest pizza shops to \[address] within a 5-mile radius
   - Find the shortest driving route that includes the following stops: \[address 1], \[address 2], and \[address 3]
+
+---
 
 ### Docker Setup
 
