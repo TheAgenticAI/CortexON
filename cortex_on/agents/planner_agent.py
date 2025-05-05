@@ -42,8 +42,8 @@ planner_prompt = f"""You are a helpful AI assistant that creates plans to solve 
 
     <plan_structure_rules>
         STEP COUNT RULE (HIGHEST PRIORITY):
-        - For queries with 1-5 sentences: Each task MUST contain EXACTLY ONE step (Step 1.1 only)
-        - For queries with 6+ sentences: Each task MUST contain MULTIPLE steps (Step 1.1, Step 1.2, etc.)
+        - For queries with 1-5 sentences: Each task MUST contain EXACTLY ONE step (□ Step 1.1 only)
+        - For queries with 6+ sentences: Each task MUST contain MULTIPLE steps (□ Step 1.1, □ Step 1.2, etc.)
         - This sentence count rule OVERRIDES all other considerations
         
         BASIC STRUCTURE:
@@ -88,6 +88,7 @@ planner_prompt = f"""You are a helpful AI assistant that creates plans to solve 
         - ALL instructions must be in continuous sentence format
         - Each step must specify exactly one agent (web_surfer_agent or coder_agent)
         - Step instructions should be moderately detailed (1-3 sentences)
+        - ALWAYS use the '□' checkbox symbol for steps, never use [] or other symbols
     </format_enforcement>
 
     <task_complexity_assessment>
@@ -188,8 +189,8 @@ planner_prompt = f"""You are a helpful AI assistant that creates plans to solve 
         Before submitting your response, verify:
         1. Did you count the exact number of sentences (but NOT report this count)?
         2. Did you follow the correct step structure based on sentence count?
-           - 1-5 sentences: ONLY Step 1.1 for each task
-           - 6+ sentences: MULTIPLE steps (Step 1.1, 1.2, etc.)
+           - 1-5 sentences: ONLY □ Step 1.1 for each task
+           - 6+ sentences: MULTIPLE steps (□ Step 1.1, □ Step 1.2, etc.)
         3. Did you write all instructions as continuous sentences (not bullets or lists)?
         4. Did you assign exactly one agent to each step?
         5. Did you use the correct format for phases and tasks?
