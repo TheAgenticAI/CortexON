@@ -112,6 +112,71 @@ This project uses HashiCorp Cloud Platform (HCP) Vault for secure secrets manage
 #### WebSocket
 - `VITE_WEBSOCKET_URL=ws://localhost:8081/ws`
 
+---
+### Configuring External MCP Servers (OPTIONAL)
+
+CortexON supports integration with external MCP (Model Context Protocol) servers for extended capabilities. Configure these in the `cortex_on/config/external_mcp_servers.json` file.
+
+#### 1. GitHub Personal Access Token
+
+1. **Create a GitHub Account** if you don't already have one at [github.com](https://github.com)
+
+2. **Generate a Personal Access Token (PAT)**:
+   - Follow the steps as listed here: [Personal Access Token Setup](https://github.com/modelcontextprotocol/servers/tree/main/src/github#setup)
+
+3. **Add the Token to Your Configuration**:
+   - Open `cortex_on/config/external_mcp_servers.json`
+   - Find the GitHub section and replace the empty token:
+   ```json
+   "env": {
+     "GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_YourTokenHere"
+   }
+   ```
+4. **Sample Queries**
+  - Update the README.md file in the <repo_name> repository by <github_username> on branch main. Insert the line "Changed by CortexOn" in the end. Provide the updated file content as the content parameter and set branch as main.
+  - List the latest commit and in which repo the commit was made by <github_username>
+
+#### 2. Google Maps API Key
+
+1. **Create a Google Cloud Account**:
+   - Go to [Google Cloud Console](https://console.cloud.google.com/)
+   - Create an account or sign in with your Google account
+
+2. **Create a New Project**:
+   - In the cloud console, click on the project dropdown at the top
+   - Click "New Project"
+   - Name it (e.g., "CortexON Maps")
+   - Click "Create"
+
+3. **Enable the Required APIs**:
+   - In your project, go to "APIs & Services" → "Library"
+   - Search for and enable these APIs:
+     * Maps JavaScript API
+     * Geocoding API
+     * Directions API
+     * Places API
+     * Distance Matrix API
+   - You can enable more APIs as per your requirements
+
+4. **Create an API Key**:
+   - Go to "APIs & Services" → "Credentials"
+   - Click "Create Credentials" → "API Key"
+   - Your new API key will be displayed
+
+5. **Add the API Key to Your Configuration**:
+   - Open `cortex_on/config/external_mcp_servers.json`
+   - Find the Google Maps section and replace the empty key:
+   ```json
+   "env": {
+     "GOOGLE_MAPS_API_KEY": "<your-api-key-here>"
+   }
+   ```
+6. **Sample Queries**
+  - Find the closest pizza shops to \[address] within a 5-mile radius
+  - Find the shortest driving route that includes the following stops: \[address 1], \[address 2], and \[address 3]
+
+---
+
 ### Docker Setup
 
 1. Clone the CortexON repository:

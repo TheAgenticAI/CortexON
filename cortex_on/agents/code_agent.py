@@ -13,6 +13,7 @@ from fastapi import WebSocket
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.anthropic import AnthropicModel
+from pydantic_ai.providers.anthropic import AnthropicProvider
 
 # Local application imports
 from utils.ant_client import get_client
@@ -236,10 +237,12 @@ async def send_stream_update(ctx: RunContext[CoderAgentDeps], message: str) -> N
         stream_output_json = json.dumps(asdict(ctx.deps.stream_output))
         logfire.debug("WebSocket message sent: {stream_output_json}", stream_output_json=stream_output_json)
 
-# Initialize the model
+# Initialize Anthropic provider with API key
+provider = AnthropicProvider(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+
 model = AnthropicModel(
     model_name=os.environ.get("ANTHROPIC_MODEL_NAME"),
-    anthropic_client=get_client()
+    provider=provider
 )
 
 # Initialize the agent

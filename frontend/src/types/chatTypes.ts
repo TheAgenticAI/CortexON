@@ -15,6 +15,7 @@ export interface SystemMessage {
   output: string;
   status_code: number;
   live_url: string;
+  message_id?: string;
 }
 
 export interface Message {
@@ -27,4 +28,5 @@ export interface Message {
 export interface AgentOutput {
   agent: string;
   output: string;
+  id?: string;
 }

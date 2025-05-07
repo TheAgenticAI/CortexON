@@ -674,11 +674,11 @@ class Orchestrator:
                                         return await self.handle_context_limit_error()
                                     await self.handle_agent_error('planner', e)
 
-                                self.log_token_usage(
-                                    agent_type='planner',
-                                    usage=planner_response._usage,
-                                    step=self.iteration_counter
-                                )
+                                # self.log_token_usage(
+                                #     agent_type='planner',
+                                #     usage=planner_response.usage,
+                                #     step=self.iteration_counter
+                                # )
 
                                 browser_error = None
                                 tool_interactions_str = None
@@ -717,11 +717,11 @@ class Orchestrator:
                                     logger.info(f"Browser Agent Response: {browser_response.data}")
                                     await self._update_current_url()
 
-                                    self.log_token_usage(
-                                        agent_type='browser',
-                                        usage=browser_response._usage,
-                                        step=self.iteration_counter
-                                    )
+                                    # self.log_token_usage(
+                                    #     agent_type='browser',
+                                    #     usage=browser_response.usage,
+                                    #     step=self.iteration_counter
+                                    # )
 
                                 except BrowserNavigationError as e:
                                     # Immediately terminate the task with error details
@@ -778,11 +778,11 @@ class Orchestrator:
                                         logger.info(f"Critique Response: {critique_data.final_response}")
                                         logger.info(f"Critique Terminate: {critique_data.terminate}")
                                         
-                                        self.log_token_usage(
-                                            agent_type='critique',
-                                            usage=critique_response._usage,
-                                            step=self.iteration_counter
-                                        )
+                                        # self.log_token_usage(
+                                        #     agent_type='critique',
+                                        #     usage=critique_response.usage,
+                                        #     step=self.iteration_counter
+                                        # )
 
                                         if critique_data.terminate:
                                             # Generate final_response if missing
