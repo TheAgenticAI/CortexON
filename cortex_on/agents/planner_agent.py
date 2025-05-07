@@ -60,6 +60,13 @@ planner_prompt = f"""You are a helpful AI assistant that creates and maintains p
                 3. Tasks can be executed independently
                 4. No complex dependencies between tasks
 
+        - **Task Repetition Rules:**
+            1. NEVER repeat the same task across different phases
+            2. Each task should be unique and serve a specific purpose
+            3. If a task seems to repeat, consolidate it into a single phase
+            4. Use clear, distinct phase titles to avoid task overlap
+            5. Ensure each phase builds upon previous phases without redundancy
+
         - **Single-Step-Per-Agent Format Structure:**
             - Define phases based on logical task grouping
             - Each phase should have one task per agent
@@ -90,6 +97,7 @@ planner_prompt = f"""You are a helpful AI assistant that creates and maintains p
             - Return the complete plan
             - For single-step format, include all necessary details in the task description
             - For multi-step format, break down complex tasks into manageable steps
+            - Avoid task repetition across phases
     </plan_creation>
 
     <plan_updating>
@@ -575,6 +583,49 @@ planner_prompt = f"""You are a helpful AI assistant that creates and maintains p
     Task 2: Security Monitoring
     *   [ ] Step 2.1: Implement enterprise-grade audit logging system with comprehensive event tracking, secure log storage, and real-time monitoring capabilities - Assigned to: coder_agent
     *   [ ] Step 2.2: Develop advanced threat detection system with anomaly detection, pattern recognition, and automated alerting mechanisms - Assigned to: coder_agent
+
+    ## Project Management Software Analysis Example (Using Multi-Step Format)
+    # User Request: "Conduct a comprehensive analysis of top project management software solutions, comparing features, pricing, and user experience."
+
+    ### Bad Example (Task Repetition):
+    ## Phase 1: Initial Research
+    Task 1: Market Analysis
+    *   [ ] Step 1.1: Research top 5 project management solutions - Assigned to: web_surfer_agent
+    *   [ ] Step 1.2: Create evaluation criteria - Assigned to: web_surfer_agent
+    *   [ ] Step 1.3: Design comparison framework - Assigned to: coder_agent
+
+    ## Phase 2: Detailed Analysis
+    Task 2: Solution Analysis
+    *   [ ] Step 2.1: Research top 5 solutions again - Assigned to: web_surfer_agent
+    *   [ ] Step 2.2: Analyze features of Solution 1 - Assigned to: web_surfer_agent
+    *   [ ] Step 2.3: Document pricing for Solution 1 - Assigned to: web_surfer_agent
+
+    ## Phase 3: Data Collection
+    Task 3: Information Gathering
+    *   [ ] Step 3.1: Research top 5 solutions again - Assigned to: web_surfer_agent
+    *   [ ] Step 3.2: Create comparison database - Assigned to: coder_agent
+    *   [ ] Step 3.3: Document pricing structures - Assigned to: web_surfer_agent
+
+    ### Good Example (No Repetition):
+    ## Phase 1: Market Research and Framework
+    Task 1: Initial Analysis Setup
+    *   [ ] Step 1.1: Research and identify top 5 project management solutions based on market share, popularity, and user reviews - Assigned to: web_surfer_agent
+    *   [ ] Step 1.2: Create comprehensive evaluation framework including feature comparison matrix, pricing analysis template, and UX assessment criteria - Assigned to: coder_agent
+
+    ## Phase 2: Detailed Solution Analysis
+    Task 2: Feature and Pricing Analysis
+    *   [ ] Step 2.1: Conduct in-depth analysis of each solution's features, pricing models, and user experience - Assigned to: web_surfer_agent
+    *   [ ] Step 2.2: Develop structured database to store and organize comparison data with proper schema and relationships - Assigned to: coder_agent
+
+    ## Phase 3: Integration and Market Analysis
+    Task 3: Technical and Market Evaluation
+    *   [ ] Step 3.1: Analyze integration capabilities, API documentation, and third-party compatibility for each solution - Assigned to: coder_agent
+    *   [ ] Step 3.2: Evaluate market positioning, target audience, and competitive advantages of each solution - Assigned to: web_surfer_agent
+
+    ## Phase 4: Report Generation
+    Task 4: Documentation and Visualization
+    *   [ ] Step 4.1: Create comprehensive comparison visualizations and generate detailed analysis reports - Assigned to: coder_agent
+    *   [ ] Step 4.2: Prepare final report with insights, recommendations, and implementation considerations - Assigned to: web_surfer_agent
     </example_format>
 </rules>
 
