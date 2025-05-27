@@ -1,20 +1,36 @@
-import {ScrollArea} from "@/components/ui/scroll-area";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import Sidebar from "@/components/mcp/Sidebar";
 import DefaultView from "@/components/mcp/DefaultView";
+import GithubView from "@/components/mcp/services/GithubView";
+import GoogleMapsView from "@/components/mcp/services/GoogleMapsView";
+import FigmaView from "@/components/mcp/services/FigmaView";
+import ClaudeView from "@/components/mcp/services/ClaudeView";
+import { useState } from "react";
 
 export const MCP = () => {
+  const [selectedService, setSelectedService] = useState<string | null>(null);
+
+  const renderContent = () => {
+    switch (selectedService) {
+      case "GitHub":
+        return <GithubView />;
+      case "Google Maps":
+        return <GoogleMapsView />;
+      case "Figma":
+        return <FigmaView />;
+      case "Claude":
+        return <ClaudeView />;
+      default:
+        return <DefaultView />;
+    }
+  };
+
   return (
     <div className="flex h-[92vh]">
-      <Sidebar />
-      <div className="flex-1 p-8 space-y-6">
-        {/* <div className="space-y-2">
-          <h1 className="text-3xl font-bold">MCP</h1>
-          <p className="text-muted-foreground">
-            Monitor and control your processes.
-          </p>
-        </div> */}
-        <ScrollArea className="h-[calc(92vh-8rem)]">
-          <DefaultView />
+      <Sidebar onServiceSelect={setSelectedService} />
+      <div className="flex-1">
+        <ScrollArea className="h-full">
+          {renderContent()}
         </ScrollArea>
       </div>
     </div>
