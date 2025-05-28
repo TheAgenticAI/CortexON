@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 from typing import Dict, Optional
+from enum import Enum
 
 class FactModel(BaseModel):
     facts: str
@@ -21,3 +22,12 @@ class LedgerModel(BaseModel):
     is_progress_being_made: LedgerAnswer
     next_speaker: LedgerAnswer
     instruction_or_question: LedgerAnswer
+
+class Action(str, Enum):
+    enable = "enable"
+    disable = "disable"
+    
+class MCPRequest(BaseModel):
+    server_name: str
+    action: Action
+    server_secret: str

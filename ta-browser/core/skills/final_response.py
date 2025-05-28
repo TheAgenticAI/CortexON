@@ -50,14 +50,14 @@ def get_final_response_provider():
         from core.utils.anthropic_client import get_client as get_anthropic_client
         from pydantic_ai.models.anthropic import AnthropicModel
         client = get_anthropic_client()
-        model = AnthropicModel(model_name=model_name, anthropic_client=client)
+        model = AnthropicModel(model_name=model_name, provider = "anthropic")
         provider = "anthropic"
     else:
         # OpenAI provider (default)
         from core.utils.openai_client import get_client as get_openai_client
         from pydantic_ai.models.openai import OpenAIModel
         client = get_openai_client()
-        model = OpenAIModel(model_name=model_name, openai_client=client)
+        model = OpenAIModel(model_name=model_name, provider = "openai")
         provider = "openai"
     
     return provider, client, model
