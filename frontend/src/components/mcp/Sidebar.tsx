@@ -1,8 +1,9 @@
-import React from 'react';
+import { useEffect, useState } from "react";
+import { mcpService, MCPServer } from "@/services/mcpService";
 import { Github, Map, Figma, Bot } from 'lucide-react';
 
 interface SidebarProps {
-  onServiceSelect: (service: string) => void;
+   onServiceSelect: (service: string) => void;
 }
 
 const services = [
@@ -13,23 +14,51 @@ const services = [
 ];
 
 const Sidebar = ({ onServiceSelect }: SidebarProps) => {
-  return (
-    <div className="w-80 bg-gray-800/50 backdrop-blur-sm border-r border-gray-600/30 p-6 flex flex-col gap-4">
-      {services.map((service) => {
-        const IconComponent = service.icon;
-        return (
-          <button
-            key={service.name}
-            onClick={() => onServiceSelect(service.name)}
-            className="flex items-center gap-3 p-4 bg-gray-700/30 border border-gray-600/50 rounded-xl text-white hover:bg-gray-600/40 hover:border-cyan-400/50 transition-all duration-200 hover:scale-105 group"
-          >
-            <IconComponent className="w-5 h-5 text-gray-300 group-hover:text-cyan-400 transition-colors" />
-            <span className="font-medium">{service.name}</span>
-          </button>
-        );
-      })}
-    </div>
-  );
+   const [servers, setServers] = useState<MCPServer[]>([]);
+   const [loading, setLoading] = useState(true);
+   const [error, setError] = useState("");
+
+   useEffect(() => {
+      const fetchServers = async () => {
+         try {
+            const data = await mcpService.getServers();
+            setServers(data);
+            setLoading(false);
+         } catch (err) {
+            setError("Failed to load servers");
+            setLoading(false);
+         }
+      };
+      fetchServers();
+   }, []);
+
+   return (
+      <div className="w-80 bg-gray-800/50 backdrop-blur-sm border-r border-gray-600/30 p-6 flex flex-col gap-4">
+         {loading && <div className="text-gray-400">Loading...</div>}
+         {error && <div className="text-red-400">{error}</div>}
+         {!loading &&
+            !error &&
+            servers.map((server) => {
+               return (
+                  <button
+                     key={server.name}
+                     onClick={() =>
+                        onServiceSelect(
+                           server.name.charAt(0).toUpperCase() +
+                              server.name.slice(1).replace("_", " ")
+                        )
+                     }
+                     className="flex items-center gap-3 p-4 bg-gray-700/30 border border-gray-600/50 rounded-xl text-white hover:bg-gray-600/40 hover:border-cyan-400/50 transition-all duration-200 hover:scale-105 group"
+                  >
+                     <span className="font-medium">
+                        {server.name.charAt(0).toUpperCase() +
+                           server.name.slice(1).replace("_", " ")}
+                     </span>
+                  </button>
+               );
+            })}
+      </div>
+   );
 };
 
-export default Sidebar; 
+export default Sidebar;
