@@ -12,13 +12,13 @@ export const MCP = () => {
 
   const renderContent = () => {
     switch (selectedService) {
-      case "GitHub":
+      case "github":
         return <GithubView />;
-      case "Google Maps":
+      case "google-maps":
         return <GoogleMapsView />;
-      case "Figma":
+      case "figma":
         return <FigmaView />;
-      case "Claude":
+      case "claude":
         return <ClaudeView />;
       default:
         return <DefaultView />;

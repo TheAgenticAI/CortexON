@@ -17,6 +17,8 @@ const getServiceIcon = (name: string) => {
       return Github;
     case 'google-maps':
       return Map;
+    case 'figma':
+      return Figma;
     default:
       return Bot;
   }
