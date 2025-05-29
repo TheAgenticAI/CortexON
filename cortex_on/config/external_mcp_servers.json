@@ -5,11 +5,9 @@
             "-y",
             "@modelcontextprotocol/server-github"
         ],
-        "env": {
-            "GITHUB_PERSONAL_ACCESS_TOKEN": "hello"
-        },
+        "env": {},
         "description": "GitHub MCP server for repository operations",
-        "status": "enabled",
+        "status": "disabled",
         "secret_key": "GITHUB_PERSONAL_ACCESS_TOKEN"
     },
     "google-maps": {
@@ -18,11 +16,9 @@
             "-y",
             "@modelcontextprotocol/server-google-maps"
         ],
-        "env": {
-            "GOOGLE_MAPS_API_KEY": "hghg"
-        },
+        "env": {},
         "description": "Google Maps MCP server for geocoding, directions, and place search",
-        "status": "enabled",
+        "status": "disabled",
         "secret_key": "GOOGLE_MAPS_API_KEY"
     }
 }
