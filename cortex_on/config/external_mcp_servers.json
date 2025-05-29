@@ -1,24 +1,28 @@
 {
-  "github": {
-      "command": "npx",
-      "args": [
-          "-y",
-          "@modelcontextprotocol/server-github"
-      ],
-      "env": {},
-      "description": "GitHub MCP server for repository operations",
-      "status": "disabled",
-      "secret_key": "GITHUB_PERSONAL_ACCESS_TOKEN"
-  },
-  "google-maps": {
-      "command": "npx",
-      "args": [
-          "-y",
-          "@modelcontextprotocol/server-google-maps"
-      ],
-      "env": {},
-      "description": "Google Maps MCP server for geocoding, directions, and place search",
-      "status": "disabled",
-      "secret_key": "GOOGLE_MAPS_API_KEY"
-  }
+    "github": {
+        "command": "npx",
+        "args": [
+            "-y",
+            "@modelcontextprotocol/server-github"
+        ],
+        "env": {
+            "GITHUB_PERSONAL_ACCESS_TOKEN": "hello"
+        },
+        "description": "GitHub MCP server for repository operations",
+        "status": "enabled",
+        "secret_key": "GITHUB_PERSONAL_ACCESS_TOKEN"
+    },
+    "google-maps": {
+        "command": "npx",
+        "args": [
+            "-y",
+            "@modelcontextprotocol/server-google-maps"
+        ],
+        "env": {
+            "GOOGLE_MAPS_API_KEY": "hghg"
+        },
+        "description": "Google Maps MCP server for geocoding, directions, and place search",
+        "status": "enabled",
+        "secret_key": "GOOGLE_MAPS_API_KEY"
+    }
 }
