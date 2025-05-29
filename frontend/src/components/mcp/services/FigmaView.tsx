@@ -2,26 +2,22 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { Loader2 } from "lucide-react";
-import ErrorBoundary from "../ErrorBoundary";
-
-interface ServerConfig {
-   command?: string;
-   args?: string[];
-}
-
-interface ServerResponse {
-   status: "success" | "error";
-   message: string;
-   config?: ServerConfig;
-}
 
 const FigmaViewContent = () => {
    const [token, setToken] = useState("");
-   const [response, setResponse] = useState<ServerResponse | null>(null);
    const [isLoading, setIsLoading] = useState(false);
+   const [feedback, setFeedback] = useState<{
+      status: "success" | "error";
+      message: string;
+   } | null>(null);
 
    const handleToggle = async (action: "enable" | "disable") => {
+      if (!token.trim()) {
+         setFeedback({ status: "error", message: "Please enter a token." });
+         return;
+      }
       setIsLoading(true);
+      setFeedback(null);
       try {
          const response = await fetch(
             "http://localhost:8081/agent/mcp/servers",
@@ -37,34 +33,29 @@ const FigmaViewContent = () => {
                }),
             }
          );
-
-         if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+         if (response.ok) {
+            setFeedback({
+               status: "success",
+               message:
+                  action === "enable"
+                     ? "Figma access token enabled successfully!"
+                     : "Figma access token disabled successfully!",
+            });
+         } else {
+            setFeedback({
+               status: "error",
+               message:
+                  "Failed to update Figma access token. Please try again.",
+            });
          }
-
-         const data = await response.json();
-         setResponse(data);
-      } catch (error) {
-         setResponse({
+      } catch {
+         setFeedback({
             status: "error",
-            message:
-               error instanceof Error
-                  ? error.message
-                  : "Failed to connect to the server. Please try again.",
+            message: "Network error. Please try again.",
          });
       } finally {
          setIsLoading(false);
       }
-   };
-
-   const getErrorMessage = (message: string) => {
-      if (message.toLowerCase().includes("invalid token")) {
-         return "The Figma access token you entered is invalid. Please check your token and try again.";
-      }
-      if (message.toLowerCase().includes("expired")) {
-         return "Your Figma access token has expired. Please generate a new token and try again.";
-      }
-      return "There was an error processing your request. Please try again.";
    };
 
    return (
@@ -89,7 +80,7 @@ const FigmaViewContent = () => {
                <Button
                   className="px-8"
                   onClick={() => handleToggle("enable")}
-                  disabled={isLoading || !token}
+                  disabled={isLoading || !token.trim()}
                >
                   {isLoading ? (
                      <>
@@ -118,33 +109,24 @@ const FigmaViewContent = () => {
             </div>
          </div>
 
-         {response && (
+         {/* Feedback message box */}
+         {feedback && feedback.message && (
             <div
-               className={`p-4 rounded-lg ${
-                  response.status === "success"
+               className={`p-4 rounded-lg min-h-[40px] mt-2 ${
+                  feedback.status === "success"
                      ? "bg-green-500/20 border border-green-500/50"
                      : "bg-red-500/20 border border-red-500/50"
                }`}
             >
                <p
                   className={
-                     response.status === "success"
+                     feedback.status === "success"
                         ? "text-green-400"
                         : "text-red-400"
                   }
                >
-                  {response.status === "success"
-                     ? response.message
-                     : getErrorMessage(response.message)}
+                  {feedback.message}
                </p>
-               {response.status === "success" && response.config && (
-                  <div className="mt-2 text-sm text-gray-400">
-                     <p>Command: {response.config.command}</p>
-                     {response.config.args && (
-                        <p>Args: {response.config.args.join(" ")}</p>
-                     )}
-                  </div>
-               )}
             </div>
          )}
       </div>
@@ -152,11 +134,7 @@ const FigmaViewContent = () => {
 };
 
 const FigmaView = () => {
-   return (
-      <ErrorBoundary>
-         <FigmaViewContent />
-      </ErrorBoundary>
-   );
+   return <FigmaViewContent />;
 };
 
 export default FigmaView;
