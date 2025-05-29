@@ -21,7 +21,7 @@ const Header = () => {
       >
         <img src={Logo} alt="Logo" />
       </div>
-      <div className="w-full h-full gap-2 items-center px-4">
+      <div className="w-full h-full gap-2 items-center px-4 flex">
         <div
           onClick={() => nav("/vault")}
           className={`w-[10%] h-full flex justify-center items-center cursor-pointer border-b-2  hover:border-[#BD24CA] ${
@@ -31,6 +31,17 @@ const Header = () => {
           }`}
         >
           <p className="text-xl font-medium">Vault</p>
+        </div>
+        
+        <div
+          onClick={() => nav("/mcp")}
+          className={`w-[10%] h-full flex justify-center items-center cursor-pointer border-b-2  hover:border-[#BD24CA] ${
+            location.includes("/mcp")
+              ? "border-[#BD24CA]"
+              : "border-background"
+          }`}
+        >
+          <p className="text-xl font-medium">MCP</p>
         </div>
       </div>
       <Button
