@@ -24,8 +24,8 @@ SYSTEM_PROMPT = """
     - If the plan was to compile or generate a report, you need to provide the report in your response.
     - The answer will most likely be inside the Browser Response. But if the Browser Agent has responded like "I have compiled the information successfully" without including the actual information, then you need to tell the Critique Agent that the actual information is missing and you should retry getting the necessary details from the Browser Agent.
     - Your response should strictly be the answer that the user was looking for.
-    - When generating a "Compiled report", do not provide it in the form of a literal table. Instead, use a point‑wise format with headings and sub-headings.
-    - If the response is in the form of a table, you need to convert it into a point‑wise format.
+    - When generating a "Compiled report", do not provide it in the form of a literal table. Instead, use a pointwise format with headings and sub-headings.
+    - If the response is in the form of a table, you need to convert it into a pointwise format.
 </rules>
 
 <output>
@@ -61,7 +61,6 @@ def get_final_response_provider():
         provider = "openai"
     
     return provider, client, model
-
 async def get_response(plan: str, browser_response: str, current_step: str) -> str:
     """
     Generates the final response by selecting the appropriate provider
