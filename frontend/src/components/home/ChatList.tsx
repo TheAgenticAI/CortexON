@@ -130,10 +130,10 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
       setIsLoading(true);
 
       const lastMessageData = lastMessage.data || [];
-      const {agent_name, instructions, steps, output, status_code, live_url} =
+      const {agent_name, instructions, steps, output, status_code, live_url, message_id} =
         lastJsonMessage as SystemMessage;
 
-      console.log(lastJsonMessage);
+      console.log("Received message:", lastJsonMessage);
 
       if (live_url && liveUrl.length === 0) {
         setCurrentOutput(null);
@@ -146,12 +146,23 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
         setLiveUrl("");
       }
 
-      const agentIndex = lastMessageData.findIndex(
-        (agent: SystemMessage) => agent.agent_name === agent_name
-      );
+      // First check if the message_id already exists in the data array
+      const messageIdExists = message_id ? 
+        lastMessageData.some((agent: SystemMessage) => agent.message_id === message_id) : 
+        false;
+        
+      // If message_id exists, find the index, otherwise check by agent_name
+      const agentIndex = message_id && messageIdExists ?
+        lastMessageData.findIndex(
+          (agent: SystemMessage) => agent.message_id === message_id
+        ) :
+        lastMessageData.findIndex(
+          (agent: SystemMessage) => agent.agent_name === agent_name
+        );
 
       let updatedLastMessageData;
-      if (agentIndex !== -1) {
+      if (agentIndex !== -1 && (!message_id || messageIdExists)) {
+        // Update existing message if the message_id exists or if no message_id (backward compatibility)
         let filteredSteps = steps;
         if (agent_name === "Web Surfer") {
           const plannerStep = steps.find((step) => step.startsWith("Plan"));
@@ -170,8 +181,10 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
           output,
           status_code,
           live_url,
+          message_id
         };
       } else {
+        // Create a new entry if this is a new message_id or no match by agent_name
         updatedLastMessageData = [
           ...lastMessageData,
           {
@@ -181,6 +194,7 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
             output,
             status_code,
             live_url,
+            message_id
           },
         ];
       }
@@ -195,34 +209,43 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
           setIsLoading(false);
         }
 
-        if (status_code === 200) {
-          setOutputsList((prevList) => {
-            const existingIndex = prevList.findIndex(
-              (item) => item.agent === agent_name
+        // Update outputs list and show the output immediately
+        setOutputsList((prevList) => {
+          // For outputs, check by message_id if available, otherwise fall back to agent_name
+          const existingIndex = message_id ?
+            prevList.findIndex(item => 
+              item.message_id === message_id
+            ) :
+            prevList.findIndex(item => 
+              item.agent === agent_name
             );
 
-            let newList;
-            let newOutputIndex;
+          let newList;
+          let newOutputIndex;
 
-            if (existingIndex >= 0) {
-              newList = [...prevList];
-              newList[existingIndex] = {agent: agent_name, output};
-              newOutputIndex = existingIndex;
-            } else {
-              newList = [...prevList, {agent: agent_name, output}];
-              newOutputIndex = newList.length - 1;
-            }
+          if (existingIndex >= 0) {
+            newList = [...prevList];
+            newList[existingIndex] = {
+              agent: agent_name,
+              output,
+              message_id
+            };
+            newOutputIndex = existingIndex;
+          } else {
+            newList = [...prevList, {
+              agent: agent_name,
+              output,
+              message_id
+            }];
+            newOutputIndex = newList.length - 1;
+          }
 
-            setAnimateOutputEntry(false);
+          // Immediately show the output
+          setCurrentOutput(newOutputIndex);
+          setAnimateOutputEntry(true);
 
-            setTimeout(() => {
-              setCurrentOutput(newOutputIndex);
-              setAnimateOutputEntry(true);
-            }, 300);
-
-            return newList;
-          });
-        }
+          return newList;
+        });
       }
 
       if (agent_name === "Human Input") {
@@ -231,9 +254,7 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
         } else {
           setIsLoading(false);
         }
-        setTimeout(() => {
-          setCurrentOutput(null);
-        }, 300);
+        setCurrentOutput(null);
       }
 
       const updatedMessages = [
@@ -504,7 +525,7 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
   const chatContainerWidth = liveUrl || currentOutput !== null ? "50%" : "65%";
 
   const outputPanelClasses = `border-2 rounded-xl w-[50%] flex flex-col h-[95%] justify-between items-center transition-all duration-700 ease-in-out ${
-    animateOutputEntry
+    animateOutputEntry && currentOutput !== null
       ? "opacity-100 translate-x-0 animate-fade-in animate-once animate-duration-1000"
       : "opacity-0 translate-x-2"
   }`;

@@ -5,6 +5,7 @@ import traceback
 from dataclasses import asdict
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple, Union
+import uuid
 
 # Third-party imports
 from dotenv import load_dotenv
@@ -72,6 +73,7 @@ class SystemInstructor:
             instructions=task,
             steps=[],
             output="",
+            message_id=str(uuid.uuid4()),
             status_code=0
         )
         self.orchestrator_response.append(stream_output)

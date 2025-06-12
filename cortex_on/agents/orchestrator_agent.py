@@ -3,6 +3,7 @@ import json
 import traceback
 from typing import List, Optional, Dict, Any, Union, Tuple
 from datetime import datetime
+import uuid
 from pydantic import BaseModel
 from dataclasses import asdict, dataclass
 import logfire
@@ -182,6 +183,7 @@ async def plan_task(ctx: RunContext[orchestrator_deps], task: str) -> str:
             instructions=task,
             steps=[],
             output="",
+            message_id=str(uuid.uuid4()),
             status_code=0
         )
         
@@ -232,21 +234,17 @@ async def coder_task(ctx: RunContext[orchestrator_deps], task: str) -> str:
     """Assigns coding tasks to the coder agent"""
     try:
         logfire.info(f"Assigning coding task: {task}")
-
+        print(f"Assigning coding task: {task}")
         # Create a new StreamResponse for Coder Agent
         coder_stream_output = StreamResponse(
-            agent_name="Coder Agent",
-            instructions=task,
-            steps=[],
-            output="",
-            status_code=0
+                agent_name="Coder Agent",
+                instructions=task,
+                steps=[],
+                output="",
+                status_code=0,
+                message_id=str(uuid.uuid4())
         )
 
-        # Add to orchestrator's response collection if available
-        if ctx.deps.agent_responses is not None:
-            ctx.deps.agent_responses.append(coder_stream_output)
-
-        # Send initial update for Coder Agent
         await _safe_websocket_send(ctx.deps.websocket, coder_stream_output)
 
         # Create deps with the new stream_output
@@ -261,17 +259,13 @@ async def coder_task(ctx: RunContext[orchestrator_deps], task: str) -> str:
             deps=deps_for_coder_agent
         )
 
-        # Extract response data
-        response_data = coder_response.data.content
-
         # Update coder_stream_output with coding results
-        coder_stream_output.output = response_data
         coder_stream_output.status_code = 200
         coder_stream_output.steps.append("Coding task completed successfully")
         await _safe_websocket_send(ctx.deps.websocket, coder_stream_output)
 
         # Add a reminder in the result message to update the plan using planner_agent_update
-        response_with_reminder = f"{response_data}\n\nReminder: You must now call planner_agent_update with the completed task description: \"{task} (coder_agent)\""
+        response_with_reminder = f"{coder_response.data.content}\n\nReminder: You must now call planner_agent_update with the completed task description: \"{task} (coder_agent)\""
 
         return response_with_reminder
     except Exception as e:
@@ -279,9 +273,10 @@ async def coder_task(ctx: RunContext[orchestrator_deps], task: str) -> str:
         logfire.error(error_msg, exc_info=True)
 
         # Update coder_stream_output with error
-        coder_stream_output.steps.append(f"Coding task failed: {str(e)}")
-        coder_stream_output.status_code = 500
-        await _safe_websocket_send(ctx.deps.websocket, coder_stream_output)
+        if 'coder_stream_output' in locals():
+            coder_stream_output.steps.append(f"Coding task failed: {str(e)}")
+            coder_stream_output.status_code = 500
+            await _safe_websocket_send(ctx.deps.websocket, coder_stream_output)
 
         return f"Failed to assign coding task: {error_msg}"
 
@@ -297,6 +292,7 @@ async def web_surfer_task(ctx: RunContext[orchestrator_deps], task: str) -> str:
             instructions=task,
             steps=[],
             output="",
+            message_id=str(uuid.uuid4()),
             status_code=0,
             live_url=None
         )
@@ -358,6 +354,7 @@ async def ask_human(ctx: RunContext[orchestrator_deps], question: str) -> str:
             instructions=question,
             steps=[],
             output="",
+            message_id=str(uuid.uuid4()),
             status_code=0
         )
 
@@ -413,6 +410,7 @@ async def planner_agent_update(ctx: RunContext[orchestrator_deps], completed_tas
             instructions=f"Update todo.md to mark as completed: {completed_task}",
             steps=[],
             output="",
+            message_id=str(uuid.uuid4()),
             status_code=0
         )
         
@@ -484,7 +482,7 @@ async def planner_agent_update(ctx: RunContext[orchestrator_deps], completed_tas
             logfire.error(error_msg, exc_info=True)
             
             planner_stream_output.steps.append(f"Plan update failed: {str(e)}")
-            planner_stream_output.status_code = a500
+            planner_stream_output.status_code = 500
             await _safe_websocket_send(ctx.deps.websocket, planner_stream_output)
             
             return f"Failed to update the plan: {error_msg}"

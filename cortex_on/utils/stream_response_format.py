@@ -1,5 +1,6 @@
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List, Optional, Dict
+import uuid
 
 @dataclass
 class StreamResponse:
@@ -9,3 +10,6 @@ class StreamResponse:
     status_code: int
     output: str
     live_url: Optional[str] = None
+    source_code: Optional[str] = None
+    metadata: Optional[Dict] = None
+    message_id: str = ""
