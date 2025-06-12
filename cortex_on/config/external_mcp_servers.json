@@ -14,7 +14,7 @@
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-google-maps"],
       "env": {
-        "GOOGLE_MAPS_API_KEY": "AIzaSyDOACQhObicqt6Bo5Pm_i4tqehCJu0BKi4"
+        "GOOGLE_MAPS_API_KEY": ""
       },
       "description": "Google Maps MCP server for geocoding, directions, and place search"
     }
