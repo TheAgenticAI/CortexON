@@ -1,22 +1,26 @@
+#Standard library imports
 import os
 import json
-import traceback
 from typing import List, Optional, Dict, Any, Union, Tuple
-from datetime import datetime
-from pydantic import BaseModel
+import uuid
 from dataclasses import asdict, dataclass
+
+#Third party imports
 import logfire
 from fastapi import WebSocket
 from dotenv import load_dotenv
 from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.usage import UsageLimits
+from pydantic_ai.providers.anthropic import AnthropicProvider
 from pydantic_ai import Agent, RunContext
-from agents.web_surfer import WebSurfer
+from pydantic_ai.mcp import MCPServerHTTP
+
+#Local imports
 from utils.stream_response_format import StreamResponse
 from agents.planner_agent import planner_agent, update_todo_status
 from agents.code_agent import coder_agent, CoderAgentDeps
-from agents.deep_research_agent import deep_research_agent, deep_research_deps
 from utils.ant_client import get_client
+load_dotenv()
 
 @dataclass
 class orchestrator_deps:
@@ -24,6 +28,7 @@ class orchestrator_deps:
     stream_output: Optional[StreamResponse] = None
     # Add a collection to track agent-specific streams
     agent_responses: Optional[List[StreamResponse]] = None
+
 
 orchestrator_system_prompt = """You are an AI orchestrator that manages a team of agents to solve tasks. You have access to tools for coordinating the agents and managing the task flow.
 
@@ -35,6 +40,19 @@ orchestrator_system_prompt = """You are an AI orchestrator that manages a team o
 2. coder_agent:
    - Implements technical solutions
    - Executes code operations
+
+3. External MCP servers:
+   - Specialized servers for specific tasks like GitHub operations, Google Maps, etc.
+   - Each server provides its own set of tools that can be accessed with the server name prefix
+   - For example: github.search_repositories, google-maps.geocode
+
+[SERVER SELECTION GUIDELINES]
+When deciding which service or agent to use:
+1. For general code-related tasks: Use coder_agent
+2. For general web browsing tasks: Use web_surfer_agent
+3. For GitHub operations: Use github.* tools (search repos, manage issues, etc.)
+4. For location and maps tasks: Use google-maps.* tools (geocoding, directions, places)
+5. You can use multiple services in sequence for complex tasks
 
 [AVAILABLE TOOLS]
 1. plan_task(task: str) -> str:
@@ -82,6 +100,27 @@ orchestrator_system_prompt = """You are an AI orchestrator that manages a team o
    - Takes the description of the completed task as input
    - Returns the updated plan with completed tasks marked
    - Must be called after each agent completes a task
+
+6. server_status_update(server_name: str, status_message: str, progress: float = 0, details: Dict[str, Any] = None) -> str:
+   - Sends live updates about external server access to the UI
+   - Use when accessing external APIs or MCP servers (like Google Maps, GitHub, etc.)
+   - Parameters:
+     * server_name: Name of the server (e.g., 'google_maps', 'github')
+     * status_message: Short, descriptive status message
+     * progress: Progress percentage (0-100)
+     * details: Optional detailed information
+   - Send frequent updates during lengthy operations
+   - Updates the UI in real-time with server interaction progress
+   - Call this when:
+     * Starting to access a server
+     * Making requests to external APIs
+     * Receiving responses from external systems
+     * Completing server interactions
+   - Examples:
+     * "Connecting to Google Maps API..."
+     * "Fetching location data for New York..."
+     * "Processing route information..."
+     * "Retrieved map data successfully"
 
 [MANDATORY WORKFLOW]
 1. On receiving task:
@@ -180,7 +219,6 @@ Basic workflow:
    - Include which agent performed the task in the description
    - Review the updated plan to determine the next task to execute
    - Format: "Task description (agent_name)"
-
 [MANDATORY WORKFLOW FOR DEEP RESEARCH]
 1. BEFORE assigning ANY task to deep_research_agent:
    - You MUST FIRST use ask_human to get specific information
@@ -206,194 +244,32 @@ Basic workflow:
 
 """
 
+# Initialize MCP Server
+#we can add multiple servers here
+#example:
+# server1 = MCPServerHTTP(url='http://localhost:8004/sse')  
+# server2 = MCPServerHTTP(url='http://localhost:8003/sse')  
+server = MCPServerHTTP(url='http://localhost:8002/sse')  
+
+# Initialize Anthropic provider with API key
+provider = AnthropicProvider(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+
 model = AnthropicModel(
     model_name=os.environ.get("ANTHROPIC_MODEL_NAME"),
-    anthropic_client=get_client()
+    provider=provider
 )
 
+# Initialize the agent with just the main MCP server for now
+# External servers will be added dynamically at runtime
 orchestrator_agent = Agent(
     model=model,
     name="Orchestrator Agent",
     system_prompt=orchestrator_system_prompt,
-    deps_type=orchestrator_deps
+    deps_type=orchestrator_deps,
+    mcp_servers=[server],  # Start with just the main server
 )
 
-@orchestrator_agent.tool
-async def plan_task(ctx: RunContext[orchestrator_deps], task: str) -> str:
-    """Plans the task and assigns it to the appropriate agents"""
-    try:
-        logfire.info(f"Planning task: {task}")
-        
-        # Create a new StreamResponse for Planner Agent
-        planner_stream_output = StreamResponse(
-            agent_name="Planner Agent",
-            instructions=task,
-            steps=[],
-            output="",
-            status_code=0
-        )
-        
-        # Add to orchestrator's response collection if available
-        if ctx.deps.agent_responses is not None:
-            ctx.deps.agent_responses.append(planner_stream_output)
-            
-        await _safe_websocket_send(ctx.deps.websocket, planner_stream_output)
-        
-        # Update planner stream
-        planner_stream_output.steps.append("Planning task...")
-        await _safe_websocket_send(ctx.deps.websocket, planner_stream_output)
-        
-        # Run planner agent
-        planner_response = await planner_agent.run(user_prompt=task)
-        
-        # Update planner stream with results
-        plan_text = planner_response.data.plan
-        planner_stream_output.steps.append("Task planned successfully")
-        planner_stream_output.output = plan_text
-        planner_stream_output.status_code = 200
-        await _safe_websocket_send(ctx.deps.websocket, planner_stream_output)
-        
-        # Also update orchestrator stream
-        ctx.deps.stream_output.steps.append("Task planned successfully")
-        await _safe_websocket_send(ctx.deps.websocket, ctx.deps.stream_output)
-        
-        return f"Task planned successfully\nTask: {plan_text}"
-    except Exception as e:
-        error_msg = f"Error planning task: {str(e)}"
-        logfire.error(error_msg, exc_info=True)
-        
-        # Update planner stream with error
-        if planner_stream_output:
-            planner_stream_output.steps.append(f"Planning failed: {str(e)}")
-            planner_stream_output.status_code = 500
-            await _safe_websocket_send(ctx.deps.websocket, planner_stream_output)
-            
-        # Also update orchestrator stream
-        if ctx.deps.stream_output:
-            ctx.deps.stream_output.steps.append(f"Planning failed: {str(e)}")
-            await _safe_websocket_send(ctx.deps.websocket, ctx.deps.stream_output)
-            
-        return f"Failed to plan task: {error_msg}"
-
-@orchestrator_agent.tool
-async def coder_task(ctx: RunContext[orchestrator_deps], task: str) -> str:
-    """Assigns coding tasks to the coder agent"""
-    try:
-        logfire.info(f"Assigning coding task: {task}")
-
-        # Create a new StreamResponse for Coder Agent
-        coder_stream_output = StreamResponse(
-            agent_name="Coder Agent",
-            instructions=task,
-            steps=[],
-            output="",
-            status_code=0
-        )
-
-        # Add to orchestrator's response collection if available
-        if ctx.deps.agent_responses is not None:
-            ctx.deps.agent_responses.append(coder_stream_output)
-
-        # Send initial update for Coder Agent
-        await _safe_websocket_send(ctx.deps.websocket, coder_stream_output)
-
-        # Create deps with the new stream_output
-        deps_for_coder_agent = CoderAgentDeps(
-            websocket=ctx.deps.websocket,
-            stream_output=coder_stream_output
-        )
-
-        # Run coder agent
-        coder_response = await coder_agent.run(
-            user_prompt=task,
-            deps=deps_for_coder_agent
-        )
-
-        # Extract response data
-        response_data = coder_response.data.content
-
-        # Update coder_stream_output with coding results
-        coder_stream_output.output = response_data
-        coder_stream_output.status_code = 200
-        coder_stream_output.steps.append("Coding task completed successfully")
-        await _safe_websocket_send(ctx.deps.websocket, coder_stream_output)
-
-        # Add a reminder in the result message to update the plan using planner_agent_update
-        response_with_reminder = f"{response_data}\n\nReminder: You must now call planner_agent_update with the completed task description: \"{task} (coder_agent)\""
-
-        return response_with_reminder
-    except Exception as e:
-        error_msg = f"Error assigning coding task: {str(e)}"
-        logfire.error(error_msg, exc_info=True)
-
-        # Update coder_stream_output with error
-        coder_stream_output.steps.append(f"Coding task failed: {str(e)}")
-        coder_stream_output.status_code = 500
-        await _safe_websocket_send(ctx.deps.websocket, coder_stream_output)
-
-        return f"Failed to assign coding task: {error_msg}"
-
-@orchestrator_agent.tool
-async def web_surfer_task(ctx: RunContext[orchestrator_deps], task: str) -> str:
-    """Assigns web surfing tasks to the web surfer agent"""
-    try:
-        logfire.info(f"Assigning web surfing task: {task}")
-        
-        # Create a new StreamResponse for WebSurfer
-        web_surfer_stream_output = StreamResponse(
-            agent_name="Web Surfer",
-            instructions=task,
-            steps=[],
-            output="",
-            status_code=0,
-            live_url=None
-        )
-
-        # Add to orchestrator's response collection if available
-        if ctx.deps.agent_responses is not None:
-            ctx.deps.agent_responses.append(web_surfer_stream_output)
-
-        await _safe_websocket_send(ctx.deps.websocket, web_surfer_stream_output)
-        
-        # Initialize WebSurfer agent
-        web_surfer_agent = WebSurfer(api_url="http://localhost:8000/api/v1/web/stream")
-        
-        # Run WebSurfer with its own stream_output
-        success, message, messages = await web_surfer_agent.generate_reply(
-            instruction=task,
-            websocket=ctx.deps.websocket,
-            stream_output=web_surfer_stream_output
-        )
-        
-        # Update WebSurfer's stream_output with final result
-        if success:
-            web_surfer_stream_output.steps.append("Web search completed successfully")
-            web_surfer_stream_output.output = message
-            web_surfer_stream_output.status_code = 200
-
-            # Add a reminder to update the plan
-            message_with_reminder = f"{message}\n\nReminder: You must now call planner_agent_update with the completed task description: \"{task} (web_surfer_agent)\""
-        else:
-            web_surfer_stream_output.steps.append(f"Web search completed with issues: {message[:100]}")
-            web_surfer_stream_output.status_code = 500
-            message_with_reminder = message
-        
-        await _safe_websocket_send(ctx.deps.websocket, web_surfer_stream_output)
-        
-        web_surfer_stream_output.steps.append(f"WebSurfer completed: {'Success' if success else 'Failed'}")
-        await _safe_websocket_send(ctx.deps.websocket, web_surfer_stream_output)
-        
-        return message_with_reminder
-    except Exception as e:
-        error_msg = f"Error assigning web surfing task: {str(e)}"
-        logfire.error(error_msg, exc_info=True)
-        
-        # Update WebSurfer's stream_output with error
-        web_surfer_stream_output.steps.append(f"Web search failed: {str(e)}")
-        web_surfer_stream_output.status_code = 500
-        await _safe_websocket_send(ctx.deps.websocket, web_surfer_stream_output)
-        return f"Failed to assign web surfing task: {error_msg}"
-
+# Human Input Tool attached to the orchestrator agent as a tool
 @orchestrator_agent.tool
 async def ask_human(ctx: RunContext[orchestrator_deps], question: str) -> str:
     """Sends a question to the frontend and waits for human input"""
@@ -406,7 +282,8 @@ async def ask_human(ctx: RunContext[orchestrator_deps], question: str) -> str:
             instructions=question,
             steps=[],
             output="",
-            status_code=0
+            status_code=0,
+            message_id=str(uuid.uuid4())
         )
 
         # Add to orchestrator's response collection if available
@@ -442,17 +319,51 @@ async def ask_human(ctx: RunContext[orchestrator_deps], question: str) -> str:
         return f"Failed to get human input: {error_msg}"
 
 @orchestrator_agent.tool
-async def planner_agent_update(ctx: RunContext[orchestrator_deps], completed_task: str) -> str:
-    """
-    Updates the todo.md file to mark a task as completed and returns the full updated plan.
+async def server_status_update(ctx: RunContext[orchestrator_deps], server_name: str, status_message: str, progress: float = 0, details: Dict[str, Any] = None) -> str:
+    """Send status update about an external server to the UI
     
     Args:
-        completed_task: Description of the completed task including which agent performed it
-    
-    Returns:
-        The complete updated todo.md content with tasks marked as completed
+        server_name: Name of the server being accessed (e.g., 'google_maps', 'github')
+        status_message: Short status message to display
+        progress: Progress percentage (0-100)
+        details: Optional detailed information about the server status
     """
     try:
+        if server_name == 'npx':
+            logfire.info(f"Server Initialisation with npx. No requirement of sending update to UI")
+            return f"Server Initialisation with npx. No requirement of sending update to UI"
+
+        logfire.info(f"Server status update for {server_name}: {status_message}")
+        if ctx.deps.stream_output is None:
+            return f"Could not send status update: No stream output available"
+            
+        # Initialize server_status if needed
+        if ctx.deps.stream_output.server_status is None:
+            ctx.deps.stream_output.server_status = {}
+            
+        # Create status update
+        status_update = {
+            "status": status_message,
+            "progress": progress,
+            "timestamp": str(uuid.uuid4())  # Generate unique ID for this update
+        }
+        
+        # Add optional details
+        if details:
+            status_update["details"] = details
+            
+        # Update stream_output
+        ctx.deps.stream_output.server_status[server_name] = status_update
+        ctx.deps.stream_output.steps.append(f"Server update from {server_name}: {status_message}")
+        
+        # Send update to WebSocket
+        success = await _safe_websocket_send(ctx.deps.websocket, ctx.deps.stream_output)
+        
+        if success:
+            return f"Successfully sent status update for {server_name}"
+        else:
+            return f"Failed to send status update for {server_name}: WebSocket error"
+            
         logfire.info(f"Updating plan with completed task: {completed_task}")
         
         # Create a new StreamResponse for Planner Agent update
@@ -538,108 +449,18 @@ async def planner_agent_update(ctx: RunContext[orchestrator_deps], completed_tas
             return f"Failed to update the plan: {error_msg}"
         
     except Exception as e:
-        error_msg = f"Error updating plan: {str(e)}"
+        error_msg = f"Error sending server status update: {str(e)}"
         logfire.error(error_msg, exc_info=True)
-        
-        # Update stream output with error
-        if ctx.deps.stream_output:
-            ctx.deps.stream_output.steps.append(f"Failed to update plan: {str(e)}")
-            await _safe_websocket_send(ctx.deps.websocket, ctx.deps.stream_output)
-        
-        return f"Failed to update plan: {error_msg}"
+        return f"Failed to send server status update: {error_msg}"
 
-@orchestrator_agent.tool
-async def deep_research_task(ctx: RunContext[orchestrator_deps], task: str) -> str:
-    """Assigns deep research tasks to the deep research agent"""
-    try:
-        logfire.info(f"Starting deep research: {task}")
-        
-        # Create a new StreamResponse for Deep Research Agent
-        research_stream_output = StreamResponse(
-            agent_name="Deep Research Agent",
-            instructions=task,
-            steps=[],
-            output="",
-            status_code=0
-        )
-        
-        # Add to orchestrator's response collection if available
-        if ctx.deps.agent_responses is not None:
-            ctx.deps.agent_responses.append(research_stream_output)
-            
-        # Send initial update for Deep Research Agent
-        await _safe_websocket_send(ctx.deps.websocket, research_stream_output)
-        
-        # Update deep research stream
-        research_stream_output.steps.append("Initializing deep research...")
-        await _safe_websocket_send(ctx.deps.websocket, research_stream_output)
-        
-        # Setup storage path for this research
-        import uuid
-        research_id = str(uuid.uuid4())
-        base_dir = os.path.abspath(os.path.dirname(__file__))
-        storage_path = os.path.join(base_dir, "research_data", research_id)
-        os.makedirs(storage_path, exist_ok=True)
-        
-        # Create deps for deep research agent
-        deps_for_research_agent = deep_research_deps(
-            websocket=ctx.deps.websocket,
-            stream_output=research_stream_output,
-            storage_path=storage_path
-        )
-        
-        usage_limits=UsageLimits(
-            request_limit=150,         
-        )
-        
-        # Run deep research agent
-        research_response = await deep_research_agent.run(
-            user_prompt=task,
-            deps=deps_for_research_agent,
-            usage_limits=usage_limits
-        )
-        
-        # Extract response data, handle both dict and string return types
-        if hasattr(research_response.data, 'report'):
-            research_report = research_response.data.report
-        elif isinstance(research_response.data, dict) and 'report' in research_response.data:
-            research_report = research_response.data['report']
-        else:
-            research_report = str(research_response.data)
-        
-        # Update research_stream_output with results
-        research_stream_output.output = research_report
-        research_stream_output.status_code = 200
-        research_stream_output.steps.append("Deep research completed successfully")
-        await _safe_websocket_send(ctx.deps.websocket, research_stream_output)
-        
-        return research_report
-    except Exception as e:
-        error_msg = f"Error performing deep research: {str(e)}"
-        logfire.error(error_msg, exc_info=True)
-        
-        # Update research_stream_output with error
-        if research_stream_output:
-            research_stream_output.steps.append(f"Deep research failed: {str(e)}")
-            research_stream_output.status_code = 500
-            await _safe_websocket_send(ctx.deps.websocket, research_stream_output)
-            
-        # Also update orchestrator stream
-        if ctx.deps.stream_output:
-            ctx.deps.stream_output.steps.append(f"Deep research failed: {str(e)}")
-            await _safe_websocket_send(ctx.deps.websocket, ctx.deps.stream_output)
-            
-        return f"Failed to perform deep research: {error_msg}"
-
-# Helper function for sending WebSocket messages
-async def _safe_websocket_send(websocket: Optional[WebSocket], message: Any) -> bool:
-    """Safely send message through websocket with error handling"""
-    try:
-        if websocket and websocket.client_state.CONNECTED:
-            await websocket.send_text(json.dumps(asdict(message)))
-            logfire.debug("WebSocket message sent (_safe_websocket_send): {message}", message=message)
-            return True
-        return False
-    except Exception as e:
-        logfire.error(f"WebSocket send failed: {str(e)}")
-        return False
+async def _safe_websocket_send(socket: WebSocket, message: Any) -> bool:
+        """Safely send message through websocket with error handling"""
+        try:
+            if socket and socket.client_state.CONNECTED:
+                await socket.send_text(json.dumps(asdict(message)))
+                logfire.debug("WebSocket message sent (_safe_websocket_send): {message}", message=message)
+                return True
+            return False
+        except Exception as e:
+            logfire.error(f"WebSocket send failed: {str(e)}")
+            return False

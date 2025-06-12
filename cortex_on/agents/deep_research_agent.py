@@ -15,6 +15,7 @@ import logfire
 from pydantic import BaseModel, Field, model_validator
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.anthropic import AnthropicModel
+from pydantic_ai.providers.anthropic import AnthropicProvider
 
 # Local application imports
 from utils.stream_response_format import StreamResponse
@@ -98,9 +99,11 @@ class ResearchResult(BaseModel):
     report: str = Field(description="The comprehensive research report")
 
 # Initialize the Anthropic model
+provider = AnthropicProvider(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+
 model = AnthropicModel(
     model_name=os.environ.get("ANTHROPIC_MODEL_NAME"),
-    anthropic_client=get_client()
+    provider=provider
 )
 
 # Initialize the Deep Research Agent

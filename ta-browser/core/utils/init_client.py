@@ -34,7 +34,7 @@ async def initialize_client():
         
         # Create model instance
         from pydantic_ai.models.anthropic import AnthropicModel
-        model_instance = AnthropicModel(model_name=model_name, anthropic_client=client_instance)
+        model_instance = AnthropicModel(model_name=model_name, provider = "anthropic")
         
         logger.info(f"Anthropic client initialized successfully with model: {model_name}")
         return client_instance, model_instance

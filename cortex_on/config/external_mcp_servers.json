@@ -1,0 +1,21 @@
+{
+  "github": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-github"
+      ],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": ""
+      },
+      "description": "GitHub MCP server for repository operations"
+  },
+  "google-maps": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-google-maps"],
+      "env": {
+        "GOOGLE_MAPS_API_KEY": "AIzaSyDOACQhObicqt6Bo5Pm_i4tqehCJu0BKi4"
+      },
+      "description": "Google Maps MCP server for geocoding, directions, and place search"
+    }
+} 
