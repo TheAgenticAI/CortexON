@@ -17,6 +17,7 @@ from utils.stream_response_format import StreamResponse
 from agents.planner_agent import planner_agent, update_todo_status
 from agents.code_agent import coder_agent, CoderAgentDeps
 from utils.ant_client import get_agentic_client, get_client
+from pydantic_ai.providers.openai import OpenAIProvider
 
 @dataclass
 class orchestrator_deps:
@@ -160,14 +161,12 @@ Basic workflow:
    - Format: "Task description (agent_name)"
 """
 
-model = AnthropicModel(
-    model_name=os.environ.get("ANTHROPIC_MODEL_NAME"),
-    anthropic_client=get_client()
-)
-
 model_openai = OpenAIModel(
     model_name='agentic-turbo',
-    openai_client=get_agentic_client()
+    provider=OpenAIProvider(
+        api_key=os.getenv("AGENTIC_API_KEY"),
+        base_url=os.getenv("AGENTIC_BASE_URL"),
+    )
 )
 
 orchestrator_agent = Agent(
@@ -501,7 +500,7 @@ async def planner_agent_update(ctx: RunContext[orchestrator_deps], completed_tas
             logfire.error(error_msg, exc_info=True)
             
             planner_stream_output.steps.append(f"Plan update failed: {str(e)}")
-            planner_stream_output.status_code = a500
+            planner_stream_output.status_code = 500
             await _safe_websocket_send(ctx.deps.websocket, planner_stream_output)
             
             return f"Failed to update the plan: {error_msg}"

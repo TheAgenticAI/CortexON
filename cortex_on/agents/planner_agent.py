@@ -8,7 +8,7 @@ import logfire
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 from pydantic_ai.models.anthropic import AnthropicModel
-
+from pydantic_ai.providers.openai import OpenAIProvider
 # Local application imports
 from utils.ant_client import get_agentic_client, get_client
 from pydantic_ai.models.openai import OpenAIModel
@@ -176,16 +176,13 @@ Available agents:
 class PlannerResult(BaseModel):
     plan: str = Field(description="The generated or updated plan in string format - this should be the complete plan text")
 
-model = AnthropicModel(
-    model_name=os.environ.get("ANTHROPIC_MODEL_NAME"),
-    anthropic_client=get_client()
-)
-
 model_openai = OpenAIModel(
     model_name='agentic-turbo',
-    openai_client=get_agentic_client()
+    provider=OpenAIProvider(
+        api_key=os.getenv("AGENTIC_API_KEY"),
+        base_url=os.getenv("AGENTIC_BASE_URL"),
+    )
 )
-
 planner_agent = Agent(
     model=model_openai,
     name="Planner Agent",

@@ -14,6 +14,8 @@ from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.models.openai import OpenAIModel
+from pydantic_ai.providers.openai import OpenAIProvider
+
 
 # Local application imports
 from utils.ant_client import get_agentic_client, get_client
@@ -237,15 +239,17 @@ async def send_stream_update(ctx: RunContext[CoderAgentDeps], message: str) -> N
         stream_output_json = json.dumps(asdict(ctx.deps.stream_output))
         logfire.debug("WebSocket message sent: {stream_output_json}", stream_output_json=stream_output_json)
 
-# Initialize the model
-model = AnthropicModel(
-    model_name=os.environ.get("ANTHROPIC_MODEL_NAME"),
-    anthropic_client=get_client()
-)
-
+# # Initialize the model
+# model = AnthropicModel(
+#     model_name=os.environ.get("ANTHROPIC_MODEL_NAME"),
+#     anthropic_client=get_client()
+# )
 model_openai = OpenAIModel(
     model_name='agentic-turbo',
-    openai_client=get_agentic_client()
+    provider=OpenAIProvider(
+        api_key=os.getenv("AGENTIC_API_KEY"),
+        base_url=os.getenv("AGENTIC_BASE_URL"),
+    )
 )
 # Initialize the agent
 coder_agent = Agent(
