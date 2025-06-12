@@ -12,7 +12,6 @@ from dotenv import load_dotenv
 from fastapi import WebSocket
 import logfire
 from pydantic_ai.messages import (
-    ArgsJson,
     ModelRequest,
     ModelResponse,
     ToolCallPart,
@@ -113,7 +112,7 @@ class WebSurfer:
                     ToolCallPart(
                         tool_name="final_result",
                         tool_call_id=tool_call_id,
-                        args=ArgsJson(args_json=json.dumps(args_data)),
+                        args=args_data,
                     )
                 ],
                 timestamp=current_time,
@@ -142,7 +141,7 @@ class WebSurfer:
                     ToolCallPart(
                         tool_name="error",
                         tool_call_id=f"error_{uuid.uuid4().hex[:12]}",
-                        args=ArgsJson(args_json=json.dumps({"error": error_message})),
+                        args={"error": error_message},
                     )
                 ],
                 timestamp=datetime.utcnow(),

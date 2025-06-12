@@ -14,7 +14,7 @@ RUN export PYTHONPATH=/app
 RUN apt-get update -y && apt-get install build-essential -y
 
 # Add the --system flag to uv pip install
-RUN uv pip install --system --no-cache-dir -r requirements.txt
+RUN uv pip install --system --no-cache-dir --upgrade -r requirements.txt
 
 COPY . .
 
