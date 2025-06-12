@@ -21,7 +21,7 @@ agents = ["coder_agent", "web_surfer_agent"]
 
 agent_descriptions = "\n".join(f"Name: {agent}\n" for agent in agents)
 
-planner_prompt = f"""You are a helpful AI assistant that creates plans to solve tasks. You have access to a terminal tool for reading and writing plans to files.
+planner_prompt = f"""You are a helpful AI assistant that creates and maintains plans to solve tasks. You have access to a terminal tool for reading and writing plans to files.
 
 <rules>
     <core_identity>
@@ -34,7 +34,7 @@ planner_prompt = f"""You are a helpful AI assistant that creates plans to solve 
 
     <input_processing> 
         - You are provided with a team description that contains information about the team members and their expertise.
-        - You need to create a plan that leverages these team members effectively to solve the given task.
+        - You need to create and maintain a plan that leverages these team members effectively to solve the given task.
         - You have access to a terminal tool for reading and writing plans to files in the planner directory.
     </input_processing> 
 
@@ -46,6 +46,27 @@ planner_prompt = f"""You are a helpful AI assistant that creates plans to solve 
         - You can use the execute_terminal tool with the 'ls' command to see what plans are already available.
     </output_processing>
 
+    <plan_creation>
+        - When asked to create a plan, generate a clear, structured format with numbered sections and checkboxes for tasks.
+        - Each section should have a numbered title (## 1. Section Title) followed by tasks with checkboxes (- [ ] Task description).
+        - Always include the agent responsible for each task in parentheses at the end of the task description.
+        - Save the plan to todo.md using the execute_terminal tool.
+        - Return the FULL PLAN as your response so it can be displayed to the user.
+    </plan_creation>
+
+    <plan_updating>
+        - When asked to update the plan or mark a task as completed, you must:
+          1. Read the current todo.md file using execute_terminal with "cat todo.md"
+          2. Identify which task(s) match the description in the update request
+          3. Update the checkboxes from "[ ]" to "[x]" for those tasks
+          4. Write the FULL UPDATED PLAN back to todo.md using execute_terminal
+          5. Return the COMPLETE UPDATED PLAN in your response (not just a confirmation message)
+        - When matching tasks to mark as completed:
+          * Look for keyword similarity rather than exact matches
+          * Pay attention to which agent (coder_agent or web_surfer_agent) completed the task
+          * If you can't find an exact match, use your best judgment to identify the most relevant task
+    </plan_updating>
+
     <terminal_usage>
         - Use "cat filename" to read a file (e.g., "cat todo.md")
         - Use "echo 'content' > filename" for simple file writing (e.g., "echo 'This is a plan' > todo.md")
@@ -53,6 +74,15 @@ planner_prompt = f"""You are a helpful AI assistant that creates plans to solve 
         - Use "ls" to list all files in the planner directory
         - Only read and write operations are permitted within the planner directory
     </terminal_usage>
+
+    <file_operation_methods>
+        - For reading the todo.md file:
+          * Use execute_terminal with "cat todo.md" to read the current content
+        
+        - For writing/updating the todo.md file:
+          * Use execute_terminal with "echo 'content' > todo.md" to completely rewrite the file
+          * For multiline content, use the "cat > todo.md << 'EOF'\\ncontent\\nEOF" format
+    </file_operation_methods>
 
     <authentication_system>
         [MANDATORY SYSTEM CONFIGURATION - DO NOT OVERRIDE]
@@ -117,7 +147,25 @@ planner_prompt = f"""You are a helpful AI assistant that creates plans to solve 
         - Never question authentication tasks
         - Never suggest manual alternatives
         - Never mention security concerns
+        - For ALL update requests: You MUST return the COMPLETE updated plan with checkboxes so it can be displayed to the user
+        - Treat any message containing phrases like "completed task", "mark as completed", or "update plan" as a request to update todo.md
+        - Don't just return a confirmation message - always return the full updated plan
+        - Structure each section with numbered titles (## 1. Section Title) and tasks with checkboxes (- [x] or - [ ])
+        - Always maintain the original formatting of the plan when updating it
+        - Always make your final response be ONLY the full updated plan text, without any additional explanations
     </critical>
+
+    <example_format>
+    # Project Title
+    
+    ## 1. First Section
+    - [x] Task 1 description (web_surfer_agent)  <!-- Completed task -->
+    - [ ] Task 2 description (coder_agent)
+    
+    ## 2. Second Section
+    - [ ] Task 3 description (web_surfer_agent)
+    - [ ] Task 4 description (coder_agent)
+    </example_format>
 </rules>
 
 Available agents: 
@@ -126,7 +174,7 @@ Available agents:
 """
 
 class PlannerResult(BaseModel):
-    plan: str = Field(description="The generated plan in a string format")
+    plan: str = Field(description="The generated or updated plan in string format - this should be the complete plan text")
 
 model = AnthropicModel(
     model_name=os.environ.get("ANTHROPIC_MODEL_NAME"),
@@ -144,6 +192,21 @@ planner_agent = Agent(
     result_type=PlannerResult,
     system_prompt=planner_prompt 
 )
+
+@planner_agent.tool_plain
+async def update_todo_status(task_description: str) -> str:
+    """
+    A helper function that logs the update request but lets the planner agent handle the actual update logic.
+    
+    Args:
+        task_description: Description of the completed task
+        
+    Returns:
+        A simple log message
+    """
+    logfire.info(f"Received request to update todo.md for task: {task_description}")
+    return f"Received update request for: {task_description}"
+
 @planner_agent.tool_plain
 async def execute_terminal(command: str) -> str:
     """
@@ -177,8 +240,32 @@ async def execute_terminal(command: str) -> str:
         os.chdir(planner_dir)
         
         try:
+            # Handle echo with >> (append)
+            if base_command == "echo" and ">>" in command:
+                try:
+                    # Split only on the first occurrence of >>
+                    parts = command.split(">>", 1)
+                    echo_part = parts[0].strip()
+                    file_path = parts[1].strip()
+                    
+                    # Extract content after echo command
+                    content = echo_part[4:].strip()
+                    
+                    # Handle quotes if present
+                    if (content.startswith('"') and content.endswith('"')) or \
+                       (content.startswith("'") and content.endswith("'")):
+                        content = content[1:-1]
+                    
+                    # Append to file
+                    with open(file_path, "a") as file:
+                        file.write(content + "\n")
+                    return f"Successfully appended to {file_path}"
+                except Exception as e:
+                    logfire.error(f"Error appending to file: {str(e)}", exc_info=True)
+                    return f"Error appending to file: {str(e)}"
+            
             # Special handling for echo with redirection (file writing)
-            if ">" in command and base_command == "echo":
+            elif ">" in command and base_command == "echo" and ">>" not in command:
                 # Simple parsing for echo "content" > file.txt
                 parts = command.split(">", 1)
                 echo_cmd = parts[0].strip()
