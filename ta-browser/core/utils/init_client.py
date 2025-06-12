@@ -4,6 +4,7 @@ from openai import AsyncOpenAI
 from core.utils.anthropic_client import create_client_with_retry as create_anthropic_client, AsyncAnthropic
 from core.utils.logger import Logger
 from pydantic_ai.models.openai import OpenAIModel
+from pydantic_ai.providers.openai import OpenAIProvider
 
 logger = Logger()
 
@@ -52,8 +53,11 @@ async def initialize_client():
                          timeout=10000)
         client_instance = client
         model_openai = OpenAIModel(
-            model_name=model_name,
-            openai_client=client_instance
+            model_name='agentic-turbo',
+            provider=OpenAIProvider(
+                api_key=os.getenv("AGENTIC_API_KEY"),
+                base_url=os.getenv("AGENTIC_BASE_URL"),
+            )
         )
         model_instance = model_openai
         return client_instance, model_instance
