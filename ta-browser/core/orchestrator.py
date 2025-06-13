@@ -324,7 +324,7 @@ class Orchestrator:
                 retries=2,
                 model_settings=ModelSettings(temperature=0.2),
                 result_type=ExplainerOutput,
-                result_tool_name="output_format",
+                result_tool_name="expected_tool_info_output_tool",
                 result_tool_description="This is the tool that you need to use everytime you want to answer the user query, You need to strictly output a JSON object within a string. It is very crucial that the output is a string and not a JSON object at all!!!"
             )
             logger.info("Explainer Agent initialized successfully.")

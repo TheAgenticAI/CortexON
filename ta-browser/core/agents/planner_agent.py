@@ -136,6 +136,7 @@ PA_SYS_PROMPT = """
     </inputs>
 
     <output>
+        <tool_call>Always use the output_format tool to pass your answer in the required format, you should use this tool to pass the object of your answer in the reqiuired schema. This is super critical and not following this will result in a punishment.</tool_call>
         <plan>Complete step-by-step plan</plan>
         <next_step>Next action to execute</next_step>
     </output>

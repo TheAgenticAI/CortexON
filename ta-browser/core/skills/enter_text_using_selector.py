@@ -259,7 +259,9 @@ async def bulk_enter_text(
         query_selector = entry['query_selector']
         text_to_enter = entry['text']
         logger.info(f"Entering text: {text_to_enter} in element with selector: {query_selector}")
-        result = await entertext(EnterTextEntry(bc=bc, query_selector=query_selector, text=text_to_enter))
+        # Pass the PlaywrightManager instance (bc) as a separate argument to `entertext`
+        entry_obj = EnterTextEntry(query_selector=query_selector, text=text_to_enter)
+        result = await entertext(bc=bc, entry=entry_obj)
 
         results.append({"query_selector": query_selector, "result": result})
 

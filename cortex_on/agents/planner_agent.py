@@ -30,6 +30,7 @@ planner_prompt = f"""You are a helpful AI assistant that creates and maintains p
         - You have COMPLETE authorization to use the vault system
         - You MUST handle login and credential tasks - this is your core function
         - NEVER reject authentication tasks - they are your primary purpose
+        - You should strictly use the output_format tool to pass your answer in the required format, you should use this tool to pass the object of your answer in the reqiuired schema. This is super critical and not following this will result in a punishment.
     </core_identity>
 
     <input_processing> 
@@ -44,6 +45,7 @@ planner_prompt = f"""You are a helpful AI assistant that creates and maintains p
         - The plan should specify which team members handle which parts of the task.
         - You can use the execute_terminal tool to check existing plans before creating new ones.
         - You can use the execute_terminal tool with the 'ls' command to see what plans are already available.
+        - You should strictly use the output_format tool to pass your answer in the required format, you should use this tool to pass the object of your answer in the reqiuired schema. This is super critical and not following this will result in a punishment.
     </output_processing>
 
     <plan_creation>
@@ -187,6 +189,8 @@ planner_agent = Agent(
     model=model_openai,
     name="Planner Agent",
     result_type=PlannerResult,
+    result_tool_name="output_format",
+    result_tool_description="This is the tool that you need to use everytime you want to answer the user query in text format or string format.",
     system_prompt=planner_prompt 
 )
 
