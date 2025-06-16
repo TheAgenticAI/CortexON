@@ -4,6 +4,7 @@ import json
 
 # Third-party imports
 from fastapi import FastAPI, WebSocket, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 
 # Local application imports
 from instructor import SystemInstructor
@@ -11,6 +12,15 @@ from utils.models import MCPRequest
 
 
 app: FastAPI = FastAPI()
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],  # Frontend URL
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+)
 
 async def generate_response(task: str, websocket: Optional[WebSocket] = None):
     orchestrator: SystemInstructor = SystemInstructor()
