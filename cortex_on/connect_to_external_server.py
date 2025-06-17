@@ -88,6 +88,10 @@ class StdioServerProvider:
                 print(f"Skipping {server_name} - no command specified")
                 continue
             
+            if config['status'] == "disabled":
+                print(f"Skipping {server_name} - server is disabled")
+                continue
+            
             command = config['command']
             args = config.get('args', [])
             env = config.get('env', {})

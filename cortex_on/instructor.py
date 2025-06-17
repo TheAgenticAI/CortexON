@@ -21,6 +21,7 @@ from agents.orchestrator_agent import orchestrator_agent, orchestrator_deps, orc
 from utils.stream_response_format import StreamResponse
 from agents.mcp_server import start_mcp_server, register_tools_for_main_mcp_server, server_manager, check_mcp_server_tools
 from connect_to_external_server import server_provider
+from agents.orchestrator_agent import server as main_server
 load_dotenv()
 
 class DateTimeEncoder(json.JSONEncoder):
@@ -123,6 +124,12 @@ class SystemInstructor:
             # Keep only the main server (first one) and remove all external servers
             if len(orchestrator_agent._mcp_servers) > 1:
                 main_server = orchestrator_agent._mcp_servers[0]
+                
+                # Log all servers that are being removed
+                for i, server in enumerate(orchestrator_agent._mcp_servers[1:], 1):
+                    server_command = getattr(server, 'command', f'server_{i}')
+                    logfire.info(f"Removing external MCP server: {server.__class__.__name__} with command: {server_command}")
+                
                 orchestrator_agent._mcp_servers = [main_server]
                 logfire.info("Reset orchestrator_agent MCP servers to just the main server")
             
@@ -139,8 +146,23 @@ class SystemInstructor:
                         if hasattr(tool_manager, '_cached_tool_schemas'):
                             tool_manager._cached_tool_schemas = None
                             logfire.info(f"Cleared tool schema cache for server {server}")
+                        
+                        # Also clear any cached tools to ensure fresh registration
+                        if hasattr(tool_manager, '_tools'):
+                            # Don't clear main server tools, just log them
+                            tool_count = len(tool_manager._tools) if tool_manager._tools else 0
+                            logfire.info(f"Server has {tool_count} registered tools")
+                            
         except Exception as e:
             logfire.error(f"Error resetting orchestrator agent: {str(e)}")
+            # If reset fails, try more aggressive cleanup
+            try:
+                # Force reset to just the main server
+                if hasattr(orchestrator_agent, '_mcp_servers') and orchestrator_agent._mcp_servers:
+                    orchestrator_agent._mcp_servers = orchestrator_agent._mcp_servers[:1]
+                    logfire.info("Performed aggressive reset - kept only first server")
+            except Exception as cleanup_err:
+                logfire.error(f"Aggressive reset also failed: {str(cleanup_err)}")
 
     async def run(self, task: str, websocket: WebSocket, server_config: Optional[Dict[str, int]] = None) -> List[Dict[str, Any]]:
         """
@@ -151,8 +173,12 @@ class SystemInstructor:
             websocket: The active WebSocket connection
             server_config: Optional configuration for MCP servers {name: port}
         """
-        # Reset the orchestrator agent to ensure we start fresh for each new chat
-        # self._reset_orchestrator_agent()
+        # Only reset if we have external servers to reset (i.e., this is not the first run)
+        if len(orchestrator_agent._mcp_servers) > 1:
+            logfire.info("Resetting orchestrator agent for new chat session (external servers detected)")
+            self._reset_orchestrator_agent()
+        else:
+            logfire.info("First run detected - skipping reset to allow initial server registration")
         
         self.websocket = websocket
         stream_output = StreamResponse(
@@ -192,6 +218,20 @@ class SystemInstructor:
             # Start each configured external MCP server
             servers, system_prompt = await server_provider.load_servers()
             
+            logfire.info(f"Loaded {len(servers)} external servers from server_provider")
+            for i, server in enumerate(servers):
+                server_command = getattr(server, 'command', f'unknown_server_{i}')
+                logfire.info(f"  Server {i}: {server.__class__.__name__} with command: {server_command}")
+            
+            # Verify we still have the main server after any operations
+            if not orchestrator_agent._mcp_servers:
+                logfire.error("No MCP servers found after reset - this should not happen!")
+                # Re-add the main server if somehow lost
+                orchestrator_agent._mcp_servers = [main_server]
+                logfire.info("Re-added main MCP server after unexpected loss")
+            
+            logfire.info(f"Starting server registration process. Current servers: {len(orchestrator_agent._mcp_servers)}, New external servers to process: {len(servers)}")
+            
             # Send status update for each server being loaded
             for i, server in enumerate(servers):
                 server_name = server.command.split('/')[-1] if hasattr(server, 'command') else f"server_{i}"
@@ -207,13 +247,45 @@ class SystemInstructor:
             main_server = orchestrator_agent._mcp_servers[0]
             check_mcp_server_tools(main_server, registered_tools)
             
-            # Now add each external server and check its tools
+            # Check if we already have external servers registered to avoid duplicates
+            existing_server_commands = set()
+            existing_server_ids = set()
+            
+            for existing_server in orchestrator_agent._mcp_servers[1:]:  # Skip main server
+                if hasattr(existing_server, 'command'):
+                    existing_server_commands.add(existing_server.command)
+                # Also track server object IDs to prevent adding the exact same object
+                existing_server_ids.add(id(existing_server))
+            
+            logfire.info(f"Existing server commands: {existing_server_commands}")
+            logfire.info(f"Servers to register: {[getattr(s, 'command', str(s)) for s in servers]}")
+            
+            # Now add each external server only if it's not already registered
+            servers_added = 0
             for server in servers:
-                # Check and deduplicate tools before adding
-                check_mcp_server_tools(server, registered_tools)
-                # Adding one at a time after checking
-                orchestrator_agent._mcp_servers.append(server)
-                logfire.info(f"Added MCP server: {server.__class__.__name__}")
+                server_command = getattr(server, 'command', str(server))
+                server_id = id(server)
+                
+                logfire.info(f"Processing server with command: {server_command}, ID: {server_id}")
+                
+                # For the first run or when we have new servers, be more permissive
+                # Only skip if we find an exact command match AND it's the same object ID
+                should_skip = (server_command in existing_server_commands and 
+                              server_id in existing_server_ids)
+                
+                if not should_skip:
+                    # Check and deduplicate tools before adding
+                    check_mcp_server_tools(server, registered_tools)
+                    # Adding one at a time after checking
+                    orchestrator_agent._mcp_servers.append(server)
+                    existing_server_commands.add(server_command)
+                    existing_server_ids.add(server_id)
+                    servers_added += 1
+                    logfire.info(f"✓ Added new MCP server: {server.__class__.__name__} with command: {server_command}")
+                else:
+                    logfire.info(f"✗ Skipped duplicate MCP server with command: {server_command} (exact duplicate found)")
+            
+            logfire.info(f"Total MCP servers after registration: {len(orchestrator_agent._mcp_servers)} (added {servers_added} new servers)")
             
             # Properly integrate external server capabilities into the system prompt
             updated_system_prompt = orchestrator_system_prompt
