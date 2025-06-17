@@ -185,3 +185,31 @@ async def add_mcp_server(server_name: str, server_config: MCPServerConfig):
             else "Server added but disabled (API key required)"
         ),
     }
+
+
+@app.delete("/agent/mcp/servers/{server_name}")
+async def delete_mcp_server(server_name: str):
+    """Delete an MCP server configuration"""
+    with open("config/external_mcp_servers.json", "r") as f:
+        servers = json.load(f)
+
+    if server_name not in servers:
+        raise HTTPException(
+            status_code=404, detail=f"Server {server_name} not found"
+        )
+
+    # Remove the server configuration
+    deleted_server = servers.pop(server_name)
+
+    # Write back to the file
+    with open("config/external_mcp_servers.json", "w") as f:
+        json.dump(servers, f, indent=4)
+
+    return {
+        "name": server_name,
+        "message": f"Server {server_name} deleted successfully",
+        "deleted_server": {
+            "description": deleted_server["description"],
+            "status": deleted_server["status"],
+        },
+    }
