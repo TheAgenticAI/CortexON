@@ -1,11 +1,11 @@
-#Standard library imports
+# Standard library imports
 import os
 import json
 from typing import List, Optional, Dict, Any, Union, Tuple
 import uuid
 from dataclasses import asdict, dataclass
 
-#Third party imports
+# Third party imports
 import logfire
 from fastapi import WebSocket
 from dotenv import load_dotenv
@@ -14,9 +14,11 @@ from pydantic_ai.providers.anthropic import AnthropicProvider
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.mcp import MCPServerHTTP
 
-#Local imports
+# Local imports
 from utils.stream_response_format import StreamResponse
+
 load_dotenv()
+
 
 @dataclass
 class orchestrator_deps:
@@ -38,9 +40,12 @@ orchestrator_system_prompt = """You are an AI orchestrator that manages a team o
    - Executes code operations
 
 3. External MCP servers:
-   - Specialized servers for specific tasks like GitHub operations, Google Maps, etc.
-   - Each server provides its own set of tools that can be accessed with the server name prefix
-   - For example: github.search_repositories, google-maps.geocode
+   - There can be many MCP servers, each specialized for different tasks (e.g., GitHub, Google Maps, Pinecone, etc.).
+   - You should always determine which MCP server is most appropriate for the current task based on its description and capabilities.
+   - Each server provides its own set of tools, which must be accessed using the server name as a prefix (e.g., github.search_repositories, pinecone.query_vector).
+   - Always use the tools provided by the relevant MCP server to accomplish tasks related to its domain.
+   - If a new MCP server is added, you should automatically consider it for relevant tasks and use its tools as needed.
+   - Example usage: server_name.tool_name(arguments)
 
 [SERVER SELECTION GUIDELINES]
 When deciding which service or agent to use:
@@ -196,18 +201,17 @@ Basic workflow:
 """
 
 # Initialize MCP Server
-#we can add multiple servers here
-#example:
-# server1 = MCPServerHTTP(url='http://localhost:8004/sse')  
-# server2 = MCPServerHTTP(url='http://localhost:8003/sse')  
-server = MCPServerHTTP(url='http://localhost:8002/sse')  
+# we can add multiple servers here
+# example:
+# server1 = MCPServerHTTP(url='http://localhost:8004/sse')
+# server2 = MCPServerHTTP(url='http://localhost:8003/sse')
+server = MCPServerHTTP(url="http://localhost:8002/sse")
 
 # Initialize Anthropic provider with API key
 provider = AnthropicProvider(api_key=os.environ.get("ANTHROPIC_API_KEY"))
 
 model = AnthropicModel(
-    model_name=os.environ.get("ANTHROPIC_MODEL_NAME"),
-    provider=provider
+    model_name=os.environ.get("ANTHROPIC_MODEL_NAME"), provider=provider
 )
 
 # Initialize the agent with just the main MCP server for now
@@ -220,13 +224,14 @@ orchestrator_agent = Agent(
     mcp_servers=[server],  # Start with just the main server
 )
 
+
 # Human Input Tool attached to the orchestrator agent as a tool
 @orchestrator_agent.tool
 async def ask_human(ctx: RunContext[orchestrator_deps], question: str) -> str:
     """Sends a question to the frontend and waits for human input"""
     try:
         logfire.info(f"Asking human: {question}")
-        
+
         # Create a new StreamResponse for Human Input
         human_stream_output = StreamResponse(
             agent_name="Human Input",
@@ -234,7 +239,7 @@ async def ask_human(ctx: RunContext[orchestrator_deps], question: str) -> str:
             steps=[],
             output="",
             status_code=0,
-            message_id=str(uuid.uuid4())
+            message_id=str(uuid.uuid4()),
         )
 
         # Add to orchestrator's response collection if available
@@ -243,36 +248,43 @@ async def ask_human(ctx: RunContext[orchestrator_deps], question: str) -> str:
 
         # Send the question to frontend
         await _safe_websocket_send(ctx.deps.websocket, human_stream_output)
-        
+
         # Update stream with waiting message
         human_stream_output.steps.append("Waiting for human input...")
         await _safe_websocket_send(ctx.deps.websocket, human_stream_output)
-        
+
         # Wait for response from frontend
         response = await ctx.deps.websocket.receive_text()
-        
+
         # Update stream with response
         human_stream_output.steps.append("Received human input")
         human_stream_output.output = response
         human_stream_output.status_code = 200
         await _safe_websocket_send(ctx.deps.websocket, human_stream_output)
-        
+
         return response
     except Exception as e:
         error_msg = f"Error getting human input: {str(e)}"
         logfire.error(error_msg, exc_info=True)
-        
+
         # Update stream with error
         human_stream_output.steps.append(f"Failed to get human input: {str(e)}")
         human_stream_output.status_code = 500
         await _safe_websocket_send(ctx.deps.websocket, human_stream_output)
-        
+
         return f"Failed to get human input: {error_msg}"
 
+
 @orchestrator_agent.tool
-async def server_status_update(ctx: RunContext[orchestrator_deps], server_name: str, status_message: str, progress: float = 0, details: Dict[str, Any] = None) -> str:
+async def server_status_update(
+    ctx: RunContext[orchestrator_deps],
+    server_name: str,
+    status_message: str,
+    progress: float = 0,
+    details: Dict[str, Any] = None,
+) -> str:
     """Send status update about an external server to the UI
-    
+
     Args:
         server_name: Name of the server being accessed (e.g., 'google_maps', 'github')
         status_message: Short status message to display
@@ -280,54 +292,62 @@ async def server_status_update(ctx: RunContext[orchestrator_deps], server_name: 
         details: Optional detailed information about the server status
     """
     try:
-        if server_name == 'npx':
-            logfire.info(f"Server Initialisation with npx. No requirement of sending update to UI")
+        if server_name == "npx":
+            logfire.info(
+                f"Server Initialisation with npx. No requirement of sending update to UI"
+            )
             return f"Server Initialisation with npx. No requirement of sending update to UI"
 
         logfire.info(f"Server status update for {server_name}: {status_message}")
         if ctx.deps.stream_output is None:
             return f"Could not send status update: No stream output available"
-            
+
         # Initialize server_status if needed
         if ctx.deps.stream_output.server_status is None:
             ctx.deps.stream_output.server_status = {}
-            
+
         # Create status update
         status_update = {
             "status": status_message,
             "progress": progress,
-            "timestamp": str(uuid.uuid4())  # Generate unique ID for this update
+            "timestamp": str(uuid.uuid4()),  # Generate unique ID for this update
         }
-        
+
         # Add optional details
         if details:
             status_update["details"] = details
-            
+
         # Update stream_output
         ctx.deps.stream_output.server_status[server_name] = status_update
-        ctx.deps.stream_output.steps.append(f"Server update from {server_name}: {status_message}")
-        
+        ctx.deps.stream_output.steps.append(
+            f"Server update from {server_name}: {status_message}"
+        )
+
         # Send update to WebSocket
         success = await _safe_websocket_send(ctx.deps.websocket, ctx.deps.stream_output)
-        
+
         if success:
             return f"Successfully sent status update for {server_name}"
         else:
             return f"Failed to send status update for {server_name}: WebSocket error"
-            
+
     except Exception as e:
         error_msg = f"Error sending server status update: {str(e)}"
         logfire.error(error_msg, exc_info=True)
         return f"Failed to send server status update: {error_msg}"
 
+
 async def _safe_websocket_send(socket: WebSocket, message: Any) -> bool:
-        """Safely send message through websocket with error handling"""
-        try:
-            if socket and socket.client_state.CONNECTED:
-                await socket.send_text(json.dumps(asdict(message)))
-                logfire.debug("WebSocket message sent (_safe_websocket_send): {message}", message=message)
-                return True
-            return False
-        except Exception as e:
-            logfire.error(f"WebSocket send failed: {str(e)}")
-            return False
+    """Safely send message through websocket with error handling"""
+    try:
+        if socket and socket.client_state.CONNECTED:
+            await socket.send_text(json.dumps(asdict(message)))
+            logfire.debug(
+                "WebSocket message sent (_safe_websocket_send): {message}",
+                message=message,
+            )
+            return True
+        return False
+    except Exception as e:
+        logfire.error(f"WebSocket send failed: {str(e)}")
+        return False
