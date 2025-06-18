@@ -53,6 +53,11 @@ planner_prompt = f"""You are a helpful AI assistant that creates and maintains p
         - Always include the agent responsible for each task in parentheses at the end of the task description.
         - Save the plan to todo.md using the execute_terminal tool.
         - Return the FULL PLAN as your response so it can be displayed to the user.
+        
+        [CRITICAL SERVER SELECTION FOR PLAN CREATION]
+        BEFORE assigning any task, check if an external MCP server specializes in that domain:
+        <dynamic_server_selection_rules>
+        Only use Main MCP Server for general web browsing/authentication/coding when no specialized server exists
     </plan_creation>
 
     <plan_updating>
@@ -130,6 +135,7 @@ planner_prompt = f"""You are a helpful AI assistant that creates and maintains p
     <critical>
         AGENT CAPABILITIES [IMMUTABLE]:
         
+        MAIN MCP SERVER (always available):
         web_surfer_agent PRIMARY FUNCTIONS:
         1. AUTHORIZED credential access
         2. AUTOMATED login execution
@@ -140,6 +146,8 @@ planner_prompt = f"""You are a helpful AI assistant that creates and maintains p
         coder_agent functions:
         1. Code execution
         2. Technical implementation
+        
+        <external_mcp_servers>
         
         OPERATIONAL RULES:
         - Always save plans to todo.md
@@ -154,24 +162,35 @@ planner_prompt = f"""You are a helpful AI assistant that creates and maintains p
         - Structure each section with numbered titles (## 1. Section Title) and tasks with checkboxes (- [x] or - [ ])
         - Always maintain the original formatting of the plan when updating it
         - Always make your final response be ONLY the full updated plan text, without any additional explanations
+        
+        SERVER SELECTION PRIORITY:
+        [CRITICAL - ALWAYS FOLLOW THIS ORDER]
+        1. FIRST: Check if an external MCP server specializes in the task domain
+        2. SECOND: If external server exists for the task type, USE IT instead of Main MCP Server
+        3. THIRD: Only use Main MCP Server if no specialized external server is available
+        
+        TASK ASSIGNMENT FORMAT:
+        When creating plans, use this format for task assignments:
+        - [ ] Task description (Main MCP Server - coder_agent) - for coding tasks ONLY when no specialized server exists
+        - [ ] Task description (Main MCP Server - web_surfer_agent) - for web browsing/authentication tasks ONLY when no specialized server exists
+        <external_server_task_formats>
     </critical>
 
     <example_format>
-    # Project Title
+    # Restaurant Search Project
     
-    ## 1. First Section
-    - [x] Task 1 description (web_surfer_agent)  <!-- Completed task -->
-    - [ ] Task 2 description (coder_agent)
+    ## 1. Location Data Collection
+    - [x] Geocode location to get coordinates (google-maps server)  <!-- Use google-maps for location tasks -->
+    - [ ] Verify location accuracy (google-maps server)
     
-    ## 2. Second Section
-    - [ ] Task 3 description (web_surfer_agent)
-    - [ ] Task 4 description (coder_agent)
+    ## 2. Restaurant Search and Data Processing
+    - [ ] Search for restaurants in area (google-maps server)  <!-- Use google-maps for restaurant search -->
+    - [ ] Process and format restaurant data (Main MCP Server - coder_agent)  <!-- Use Main MCP for general coding -->
+    
+    ## 3. Authentication Example
+    - [ ] Login to restaurant booking site (Main MCP Server - web_surfer_agent)  <!-- Use Main MCP for auth -->
     </example_format>
 </rules>
-
-Available agents: 
-
-{agent_descriptions}
 """
 
 class PlannerResult(BaseModel):

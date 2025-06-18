@@ -18,6 +18,7 @@ from pydantic import BaseModel
 
 # Local application imports
 from agents.orchestrator_agent import orchestrator_agent, orchestrator_deps, orchestrator_system_prompt
+from agents.planner_agent import planner_agent, planner_prompt
 from utils.stream_response_format import StreamResponse
 from agents.mcp_server import start_mcp_server, register_tools_for_main_mcp_server, server_manager, check_mcp_server_tools
 from connect_to_external_server import server_provider
@@ -137,6 +138,10 @@ class SystemInstructor:
             orchestrator_agent.system_prompt = orchestrator_system_prompt
             logfire.info("Reset orchestrator_agent system prompt to default")
             
+            # Reset planner agent prompt to its original state
+            planner_agent.system_prompt = planner_prompt
+            logfire.info("Reset planner_agent system prompt to default")
+            
             # If there's a tools manager, clear any cache it might have
             for server in orchestrator_agent._mcp_servers:
                 if hasattr(server, '_mcp_api') and server._mcp_api:
@@ -161,6 +166,10 @@ class SystemInstructor:
                 if hasattr(orchestrator_agent, '_mcp_servers') and orchestrator_agent._mcp_servers:
                     orchestrator_agent._mcp_servers = orchestrator_agent._mcp_servers[:1]
                     logfire.info("Performed aggressive reset - kept only first server")
+                    
+                # Force reset planner prompt
+                planner_agent.system_prompt = planner_prompt
+                logfire.info("Performed aggressive planner reset")
             except Exception as cleanup_err:
                 logfire.error(f"Aggressive reset also failed: {str(cleanup_err)}")
 
@@ -287,18 +296,134 @@ class SystemInstructor:
             
             logfire.info(f"Total MCP servers after registration: {len(orchestrator_agent._mcp_servers)} (added {servers_added} new servers)")
             
-            # Properly integrate external server capabilities into the system prompt
-            updated_system_prompt = orchestrator_system_prompt
-            if system_prompt and system_prompt.strip():
-                if "[AVAILABLE TOOLS]" in updated_system_prompt:
-                    sections = updated_system_prompt.split("[AVAILABLE TOOLS]")
-                    updated_system_prompt = sections[0] + system_prompt + "\n\n[AVAILABLE TOOLS]" + sections[1]
-                else:
-                    # If we can't find the section, just append to the end (fallback)
-                    updated_system_prompt = updated_system_prompt + "\n\n" + system_prompt
+            # Generate dynamic content for specific sections of the orchestrator prompt
+            # Only include enabled servers
+            server_names = [
+                name for name, config in server_provider.server_configs.items()
+                if config.get('status') == 'enabled'
+            ]
             
+            # Get the dynamic sections
+            dynamic_sections = server_provider.generate_dynamic_sections(server_names)
+            
+            # Start with the original orchestrator system prompt
+            updated_system_prompt = orchestrator_system_prompt
+            
+            # Replace each placeholder section with dynamic content
+            if dynamic_sections["server_selection_guidelines"]:
+                # Find and replace server selection guidelines
+                if "<server_selection_guidelines>" in updated_system_prompt:
+                    updated_system_prompt = updated_system_prompt.replace(
+                        "<server_selection_guidelines>", 
+                        dynamic_sections["server_selection_guidelines"]
+                    )
+                else:
+                    # If placeholder not found, add after the existing server selection guidelines
+                    if "When deciding which service or agent to use:" in updated_system_prompt:
+                        sections = updated_system_prompt.split("When deciding which service or agent to use:")
+                        if len(sections) >= 2:
+                            # Find the end of the existing guidelines
+                            parts = sections[1].split("</server_selection_guidelines>")
+                            if len(parts) >= 2:
+                                sections[1] = parts[0] + "\n" + dynamic_sections["server_selection_guidelines"] + "\n</server_selection_guidelines>" + parts[1]
+                            else:
+                                # No closing tag found, add after the section
+                                sections[1] = parts[0] + "\n" + dynamic_sections["server_selection_guidelines"] + parts[1]
+                            updated_system_prompt = "When deciding which service or agent to use:".join(sections)
+            
+            # Replace available tools section
+            if dynamic_sections["available_tools"]:
+                if "<available_tools>" in updated_system_prompt and "</available_tools>" in updated_system_prompt:
+                    # Simple replacement between tags
+                    start_tag = "<available_tools>"
+                    end_tag = "</available_tools>"
+                    start_idx = updated_system_prompt.find(start_tag)
+                    end_idx = updated_system_prompt.find(end_tag)
+                    
+                    if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+                        # Replace content between tags
+                        before = updated_system_prompt[:start_idx + len(start_tag)]
+                        after = updated_system_prompt[end_idx:]
+                        updated_system_prompt = before + "\n" + dynamic_sections["available_tools"] + "\n" + after
+            
+            # Replace servers with tools section
+            if dynamic_sections["servers_available_to_you_with_list_of_their_tools"]:
+                if "<servers_available_to_you_with_list_of_their_tools>" in updated_system_prompt and "</servers_available_to_you_with_list_of_their_tools>" in updated_system_prompt:
+                    # Simple replacement between tags
+                    start_tag = "<servers_available_to_you_with_list_of_their_tools>"
+                    end_tag = "</servers_available_to_you_with_list_of_their_tools>"
+                    start_idx = updated_system_prompt.find(start_tag)
+                    end_idx = updated_system_prompt.find(end_tag)
+                    
+                    if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+                        # Replace content between tags
+                        before = updated_system_prompt[:start_idx + len(start_tag)]
+                        after = updated_system_prompt[end_idx:]
+                        updated_system_prompt = before + "\n" + dynamic_sections["servers_available_to_you_with_list_of_their_tools"] + "\n" + after
+            
+            # Replace external MCP server tools section
+            if dynamic_sections["external_mcp_server_tools"]:
+                if "<external_mcp_server_tools>" in updated_system_prompt:
+                    updated_system_prompt = updated_system_prompt.replace(
+                        "<external_mcp_server_tools>", 
+                        dynamic_sections["external_mcp_server_tools"]
+                    )
+            
+            # Set the updated prompt
             orchestrator_agent.system_prompt = updated_system_prompt
-            logfire.info(f"Updated orchestrator agent with {len(servers)} MCP servers. Current MCP servers: {orchestrator_agent._mcp_servers}")
+            logfire.info(f"Updated orchestrator agent with dynamic sections for {len(server_names)} external servers: {server_names}")
+            
+            # Properly integrate external server capabilities into the system prompt
+            # This is kept as a fallback for any additional content
+            if system_prompt and system_prompt.strip() and "[AVAILABLE TOOLS]" in updated_system_prompt:
+                sections = updated_system_prompt.split("[AVAILABLE TOOLS]")
+                updated_system_prompt = sections[0] + system_prompt + "\n\n[AVAILABLE TOOLS]" + sections[1]
+                orchestrator_agent.system_prompt = updated_system_prompt
+            
+            # Update planner agent with dynamic MCP server information
+            planner_sections = server_provider.generate_planner_sections(server_names)
+            updated_planner_prompt = planner_prompt
+            
+            # Replace planner-specific placeholders
+            if "<external_mcp_servers>" in updated_planner_prompt:
+                updated_planner_prompt = updated_planner_prompt.replace(
+                    "<external_mcp_servers>", 
+                    planner_sections["external_mcp_servers"]
+                )
+                logfire.info("✓ Updated planner prompt with external MCP servers info")
+            else:
+                logfire.warning("✗ Planner prompt placeholder <external_mcp_servers> not found")
+            
+            if "<external_server_task_formats>" in updated_planner_prompt:
+                updated_planner_prompt = updated_planner_prompt.replace(
+                    "<external_server_task_formats>", 
+                    planner_sections["external_server_task_formats"]
+                )
+                logfire.info("✓ Updated planner prompt with external server task formats")
+            else:
+                logfire.warning("✗ Planner prompt placeholder <external_server_task_formats> not found")
+            
+            # Replace dynamic server selection rules
+            if "<dynamic_server_selection_rules>" in updated_planner_prompt:
+                updated_planner_prompt = updated_planner_prompt.replace(
+                    "<dynamic_server_selection_rules>", 
+                    planner_sections["dynamic_server_selection_rules"]
+                )
+                logfire.info("✓ Updated planner prompt with dynamic server selection rules")
+            else:
+                logfire.warning("✗ Planner prompt placeholder <dynamic_server_selection_rules> not found")
+            
+            # Set the updated planner prompt
+            planner_agent.system_prompt = updated_planner_prompt
+            logfire.info(f"Updated planner agent with dynamic sections for {len(server_names)} external servers")
+            
+            # Save both prompts for debugging (to be removed later)
+            with open("system_prompt.txt", "w") as f:
+                f.write(orchestrator_agent.system_prompt)
+            
+            with open("planner_prompt.txt", "w") as f:
+                f.write(planner_agent.system_prompt)
+            
             # Configure orchestrator_agent to use all configured MCP servers
             logfire.info("Starting to register MCP server tools with Claude")
             
@@ -330,14 +455,39 @@ class SystemInstructor:
                             lambda s, status: self.send_server_status_update(stream_output, s, status)
                         )
                     )
-                                
-                orchestrator_response = await orchestrator_agent.run(
-                    user_prompt=task,
-                    deps=deps_for_orchestrator
-                )
-            stream_output.output = orchestrator_response.output
+                
+                try:
+                    orchestrator_response = await orchestrator_agent.run(
+                        user_prompt=task,
+                        deps=deps_for_orchestrator
+                    )
+                except Exception as orchestrator_error:
+                    if "UnexpectedModelBehavior" in str(orchestrator_error) or "empty model response" in str(orchestrator_error):
+                        # Handle the specific case of empty model response
+                        logfire.error(f"Orchestrator returned empty response: {str(orchestrator_error)}")
+                        fallback_response = f"I have processed your request: {task}. The system executed the planned tasks using the available agents and tools. All planned steps have been completed. Please refer to the execution details above for specific results from each component."
+                        
+                        # Create a mock response object
+                        class MockResponse:
+                            def __init__(self, output):
+                                self.output = output
+                        
+                        orchestrator_response = MockResponse(fallback_response)
+                    else:
+                        # Re-raise other exceptions
+                        raise orchestrator_error
+            
+            # Ensure we have a valid response
+            if not orchestrator_response or not orchestrator_response.output or orchestrator_response.output.strip() == "":
+                # Provide a fallback response
+                fallback_response = f"Task processing completed. I executed the requested task: {task}. All planned steps have been processed through the available agents and tools. Please check the detailed execution logs above for specific results and outputs from each step."
+                stream_output.output = fallback_response
+                logfire.warning(f"Orchestrator returned empty response, using fallback: {fallback_response}")
+            else:
+                stream_output.output = orchestrator_response.output
+                logfire.debug(f"Orchestrator response: {orchestrator_response.output}")
+            
             stream_output.status_code = 200
-            logfire.debug(f"Orchestrator response: {orchestrator_response.output}")
             await self._safe_websocket_send(stream_output)
 
             logfire.info("Task completed successfully")

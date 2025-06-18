@@ -194,11 +194,34 @@ class StdioServerProvider:
                 2. Server selection guidelines:
                 """
 
-        # Dynamically generate server selection guidelines based on available servers
-        for server_name in server_names:
-            server_title = server_name.replace('-', ' ').title()
-            prompt += f"   - For {server_title} operations: Choose the {server_name} server\n"
+        # Generate server selection guidelines
+        server_selection = ""
+        if server_names:
+            server_selection = "When deciding which external server to use:\n"
+            for i, server_name in enumerate(server_names, 1):
+                config = self.server_configs.get(server_name, {})
+                description = config.get('description', f"MCP server for {server_name}")
+                server_title = server_name.replace('-', ' ').title()
+                
+                # Generate usage scenarios based on server type
+                keywords = server_name.lower().split('-')
+                # if "github" in keywords:
+                #     usage = "repository operations, code analysis, issue management"
+                # elif "google" in keywords and "maps" in keywords:
+                #     usage = "location services, geocoding, directions, place search"
+                # elif "weather" in keywords:
+                #     usage = "weather information, forecasts, climate data"
+                # elif "calendar" in keywords:
+                #     usage = "scheduling, calendar management, event creation"
+                # else:
+                usage = f"{server_name.replace('-', ' ')} related operations"
+                
+                server_selection += f"{i + 2}. For {usage}: Use {server_name} server\n"
+        else:
+            server_selection = "No external servers currently configured. Use main server tools (coder_task, web_surfer_task) for all operations."
 
+        prompt += server_selection
+        
         prompt += """
                 3. Important notes:
                 - Always include the server name prefix with the tool name
@@ -207,6 +230,232 @@ class StdioServerProvider:
                         """
         
         return prompt
+
+    def generate_dynamic_sections(self, server_names: List[str]) -> Dict[str, str]:
+        """Generate content for each specific section that needs dynamic insertion"""
+        
+        # Always include main server tools
+        main_server_tools = [
+            {
+                "name": "coder_task",
+                "description": "Assigns coding tasks to the coder agent - handles code implementation and execution",
+                "server": "main"
+            },
+            {
+                "name": "web_surfer_task", 
+                "description": "Assigns web surfing tasks to the web surfer agent - handles web browsing and authentication",
+                "server": "main"
+            }
+        ]
+        
+        # Generate server selection guidelines for dynamic sections
+        server_selection_dynamic = ""
+        if server_names:
+            server_selection_dynamic = "When deciding which external server to use:\n"
+            for i, server_name in enumerate(server_names, 1):
+                config = self.server_configs.get(server_name, {})
+                description = config.get('description', f"MCP server for {server_name}")
+                server_title = server_name.replace('-', ' ').title()
+                
+                # Generate usage scenarios based on server type
+                keywords = server_name.lower().split('-')
+                if "github" in keywords:
+                    usage = "repository operations, code analysis, issue management"
+                elif "google" in keywords and "maps" in keywords:
+                    usage = "location services, geocoding, directions, place search"
+                elif "weather" in keywords:
+                    usage = "weather information, forecasts, climate data"
+                elif "calendar" in keywords:
+                    usage = "scheduling, calendar management, event creation"
+                else:
+                    usage = f"{server_name.replace('-', ' ')} related operations"
+                
+                server_selection_dynamic += f"{i + 2}. For {usage}: Use {server_name} server\n"
+        else:
+            server_selection_dynamic = "No external servers currently configured. Use main server tools (coder_task, web_surfer_task) for all operations."
+        
+        # Generate available tools section
+        available_tools = ""
+        
+        # First add main server tools
+        for i, tool in enumerate(main_server_tools, 5):  # Start from 5 to continue after direct orchestrator tools
+            available_tools += f"\n{i}. {tool['name']}:\n"
+            available_tools += f"   - {tool['description']}\n"
+            available_tools += f"   - Provided by {tool['server']} MCP server\n"
+            available_tools += f"   - Use when plan requires {'coding' if 'coder' in tool['name'] else 'web browsing/authentication'} operations\n"
+        
+        # Then add external server tools
+        tool_counter = 5 + len(main_server_tools)
+        for server_name in server_names:
+            tools = self.server_tools.get(server_name, [])
+            if tools:
+                for tool in tools:
+                    tool_name = tool.get("name", f"{server_name}.unknown_tool")
+                    tool_description = tool.get("description", "No description available")
+                    available_tools += f"\n{tool_counter}. {tool_name}:\n"
+                    available_tools += f"   - {tool_description}\n"
+                    available_tools += f"   - Provided by {server_name} server\n"
+                    available_tools += f"   - Use when plan requires {server_name.replace('-', ' ')} operations\n"
+                    tool_counter += 1
+        
+        # Generate servers with tools section
+        servers_with_tools = ""
+        
+        # First add main server
+        servers_with_tools += "\nI. MAIN MCP SERVER:\n"
+        servers_with_tools += "   Description: Core MCP server providing coding and web browsing capabilities\n"
+        for i, tool in enumerate(main_server_tools, 1):
+            servers_with_tools += f"   {i}. {tool['name']}:\n"
+            servers_with_tools += f"      - {tool['description']}\n"
+            servers_with_tools += f"      - Updates UI with {tool['server']} server operation progress\n"
+        servers_with_tools += "\n"
+        
+        # Then add external servers
+        for i, server_name in enumerate(server_names, 1):
+            config = self.server_configs.get(server_name, {})
+            description = config.get('description', f"MCP server for {server_name}")
+            
+            servers_with_tools += f"{i + 1}. {server_name.upper()} SERVER:\n"
+            servers_with_tools += f"   Description: {description}\n"
+            
+            tools = self.server_tools.get(server_name, [])
+            if tools:
+                for j, tool in enumerate(tools, 1):
+                    tool_name = tool.get("name", f"{server_name}.unknown_tool")
+                    tool_description = tool.get("description", "No description available")
+                    servers_with_tools += f"   {j}. {tool_name}:\n"
+                    servers_with_tools += f"      - {tool_description}\n"
+                    servers_with_tools += f"      - Updates UI with {server_name} operation progress\n"
+            else:
+                servers_with_tools += f"   - Various tools prefixed with '{server_name}.'\n"
+            servers_with_tools += "\n"
+        
+        # Generate external MCP server tools guidelines
+        external_tools_guidelines = ""
+        
+        if server_names:
+            external_tools_guidelines = "Additional specialized tools available from external MCP servers:\n"
+            
+            external_tools_guidelines += "\n[CRITICAL: STATUS REPORTING REQUIREMENT]\n"
+            external_tools_guidelines += "For all external server operations, you MUST use server_status_update:\n"
+            external_tools_guidelines += "1. BEFORE calling tool: server_status_update(server_name, 'Connecting...', 10)\n"
+            external_tools_guidelines += "2. BEFORE calling tool: server_status_update(server_name, 'Preparing request...', 30)\n"
+            external_tools_guidelines += "3. AFTER calling tool: server_status_update(server_name, 'Processing response...', 80)\n"
+            external_tools_guidelines += "4. AFTER calling tool: server_status_update(server_name, 'Operation completed', 100)\n\n"
+            
+            for server_name in server_names:
+                config = self.server_configs.get(server_name, {})
+                description = config.get('description', f"MCP server for {server_name}")
+                
+                external_tools_guidelines += f"- {server_name} Server:\n"
+                external_tools_guidelines += f"  * Description: {description}\n"
+                external_tools_guidelines += f"  * Use when plan specifies {server_name.replace('-', ' ')} operations\n"
+                external_tools_guidelines += f"  * REQUIRED: Use server_status_update before and after {server_name} tool calls\n"
+                external_tools_guidelines += f"  * Tool format: {server_name}.tool_name (e.g., {server_name}.places)\n"
+                
+                tools = self.server_tools.get(server_name, [])
+                if tools:
+                    external_tools_guidelines += f"  * Available tools: {', '.join([tool.get('name', '') for tool in tools])}\n"
+                external_tools_guidelines += "\n"
+            
+            external_tools_guidelines += """Key guidelines for external server usage:
+- CRITICAL: Always use server_status_update before and after external tool calls
+- This creates step-by-step progress reporting similar to planner agent
+- Users see real-time feedback showing connection, execution, and completion steps
+- Each external server provides domain-specific tools
+- Follow plan guidance for when to use external server tools
+- All external server tools require proper server name prefixes
+- Monitor server status and provide user feedback during operations"""
+        else:
+            external_tools_guidelines = """No external MCP servers currently configured.
+Only the main MCP server tools (coder_task, web_surfer_task) are available.
+External servers can be added by configuring them in the external_mcp_servers.json file."""
+        
+        return {
+            "server_selection_guidelines": server_selection_dynamic.strip(),
+            "available_tools": available_tools.strip(),
+            "servers_available_to_you_with_list_of_their_tools": servers_with_tools.strip(),
+            "external_mcp_server_tools": external_tools_guidelines.strip()
+        }
+
+    def generate_planner_sections(self, server_names: List[str]) -> Dict[str, str]:
+        """Generate content for planner agent specific sections"""
+        
+        # Generate external MCP servers information for planner
+        external_servers_info = ""
+        external_task_formats = ""
+        dynamic_server_selection_rules = ""
+        
+        if server_names:
+            external_servers_info = "EXTERNAL MCP SERVERS (dynamically available):\n"
+            external_task_formats = "\nFor external servers, use these formats:\n"
+            dynamic_server_selection_rules = ""
+            
+            for server_name in server_names:
+                config = self.server_configs.get(server_name, {})
+                description = config.get('description', f"MCP server for {server_name}")
+                
+                # Generate dynamic server selection rule based on description
+                if description:
+                    # Extract key capabilities from description to create selection rules
+                    description_lower = description.lower()
+                    if any(keyword in description_lower for keyword in ['github', 'repository', 'code analysis']):
+                        dynamic_server_selection_rules += f"- GitHub/repository/code analysis tasks → USE {server_name} server (NOT web_surfer_agent)\n"
+                    elif any(keyword in description_lower for keyword in ['google', 'maps', 'location', 'geocoding']):
+                        dynamic_server_selection_rules += f"- Location/geocoding/mapping/navigation tasks → USE {server_name} server (NOT web_surfer_agent)\n"
+                    elif any(keyword in description_lower for keyword in ['pinecone', 'vector', 'database', 'index']):
+                        dynamic_server_selection_rules += f"- Vector database/index management/Pinecone tasks → USE {server_name} server (NOT web_surfer_agent)\n"
+                    elif any(keyword in description_lower for keyword in ['weather', 'climate', 'forecast']):
+                        dynamic_server_selection_rules += f"- Weather/climate/forecast tasks → USE {server_name} server (NOT web_surfer_agent)\n"
+                    else:
+                        # Generic rule based on server name
+                        server_title = server_name.replace('-', ' ').title()
+                        dynamic_server_selection_rules += f"- {server_title} related tasks → USE {server_name} server (NOT web_surfer_agent)\n"
+                
+                # Add server info
+                external_servers_info += f"\n{server_name} server:\n"
+                external_servers_info += f"- Description: {description}\n"
+                
+                # Add capabilities based on server type
+                keywords = server_name.lower().split('-')
+                if "github" in keywords:
+                    external_servers_info += "- Capabilities: Repository operations, code analysis, issue management\n"
+                    external_servers_info += "- Use for: GitHub-related tasks, repository management, code search\n"
+                elif "google" in keywords and "maps" in keywords:
+                    external_servers_info += "- Capabilities: Location services, geocoding, directions, place search\n"
+                    external_servers_info += "- Use for: Location-based tasks, mapping, navigation\n"
+                elif "weather" in keywords:
+                    external_servers_info += "- Capabilities: Weather information, forecasts, climate data\n"
+                    external_servers_info += "- Use for: Weather-related tasks, climate information\n"
+                else:
+                    external_servers_info += f"- Capabilities: {server_name.replace('-', ' ').title()} operations\n"
+                    external_servers_info += f"- Use for: {server_name.replace('-', ' ')} related tasks\n"
+                
+                # Add tools if available
+                tools = self.server_tools.get(server_name, [])
+                if tools:
+                    external_servers_info += f"- Available tools: {', '.join([tool.get('name', '') for tool in tools])}\n"
+                
+                # Add task format with specific use cases
+                server_lower = server_name.lower()
+                if "github" in server_lower:
+                    external_task_formats += f"- [ ] Task description ({server_name} server) - for repository operations, code search, issue management\n"
+                elif "google" in server_lower and "maps" in server_lower:
+                    external_task_formats += f"- [ ] Task description ({server_name} server) - for location services, geocoding, restaurant search, navigation\n"
+                elif "weather" in server_lower:
+                    external_task_formats += f"- [ ] Task description ({server_name} server) - for weather information, forecasts, climate data\n"
+                else:
+                    external_task_formats += f"- [ ] Task description ({server_name} server) - for {server_name.replace('-', ' ')} operations\n"
+        else:
+            external_servers_info = "EXTERNAL MCP SERVERS: None currently configured."
+            external_task_formats = "\nNo external servers available. Use only Main MCP Server assignments."
+            dynamic_server_selection_rules = "No external servers configured."
+        
+        return {
+            "external_mcp_servers": external_servers_info.strip(),
+            "external_server_task_formats": external_task_formats.strip(),
+            "dynamic_server_selection_rules": dynamic_server_selection_rules.strip()
+        }
 
     async def get_server_tools(self, server_name: str) -> List[Dict[str, Any]]:
         """Fetch tool information from a running server by introspecting its capabilities"""
