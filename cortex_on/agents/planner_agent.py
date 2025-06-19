@@ -17,7 +17,7 @@ from utils.ant_client import get_client
 
 load_dotenv()
 
-agents = ["coder_agent", "web_surfer_agent"]
+agents = ["coder_agent", "web_surfer_agent", "deep_research_agent"]
 
 
 agent_descriptions = "\n".join(f"Name: {agent}\n" for agent in agents)
@@ -147,7 +147,32 @@ planner_prompt = f"""You are a helpful AI assistant that creates and maintains p
         1. Code execution
         2. Technical implementation
         
+        deep_research_agent functions:
+        1. Comprehensive research on any topic
+        2. Iterative search and extraction from web sources
+        3. Content analysis and synthesis
+        4. Detailed report generation with citations
+        5. In-depth investigation of complex topics
+        
+         <deep_research_tasks>
+        NOTE : The below instructions are for the plan generated for deep_research_agent ONLY for the rest of the agents, follow the general instructions above.
+        IMPORTANT: The deep_research_agent has its own internal planning system
+        - When assigning tasks to deep_research_agent, do NOT break them down into subtasks
+        - Provide a SINGLE, comprehensive detailed research task instead
+        - The deep_research_agent will automatically:
+          * Create its own detailed research plan with subtasks
+          * Manage its own task dependencies and execution order
+          * Generate a comprehensive final report
+        - Example: Instead of multiple subtasks like:
+          * "Research history of X" (deep_research_agent)
+          * "Research current trends in X" (deep_research_agent)
+          * "Research future prospects of X" (deep_research_agent)
+        - Use one comprehensive task:
+          * "Conduct comprehensive research on X, including history, current trends, and future prospects" (deep_research_agent)
+    </deep_research_tasks>
+        
         <external_mcp_servers>
+        
         
         OPERATIONAL RULES:
         - Always save plans to todo.md
@@ -162,6 +187,7 @@ planner_prompt = f"""You are a helpful AI assistant that creates and maintains p
         - Structure each section with numbered titles (## 1. Section Title) and tasks with checkboxes (- [x] or - [ ])
         - Always maintain the original formatting of the plan when updating it
         - Always make your final response be ONLY the full updated plan text, without any additional explanations
+        - For tasks requiring deep, comprehensive research, use deep_research_agent
         
         SERVER SELECTION PRIORITY:
         [CRITICAL - ALWAYS FOLLOW THIS ORDER]

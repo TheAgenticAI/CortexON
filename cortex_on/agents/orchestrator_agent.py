@@ -10,6 +10,7 @@ import logfire
 from fastapi import WebSocket
 from dotenv import load_dotenv
 from pydantic_ai.models.anthropic import AnthropicModel
+from pydantic_ai.usage import UsageLimits
 from pydantic_ai.providers.anthropic import AnthropicProvider
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.mcp import MCPServerHTTP
@@ -18,6 +19,8 @@ from pydantic_ai.mcp import MCPServerHTTP
 from utils.stream_response_format import StreamResponse
 from agents.planner_agent import planner_agent
 load_dotenv()
+from agents.planner_agent import planner_agent, update_todo_status
+from utils.ant_client import get_client
 
 @dataclass
 class orchestrator_deps:
@@ -41,11 +44,18 @@ YOU MUST ALWAYS PROVIDE A FINAL RESPONSE TO THE USER. Never return empty or blan
    - Implements technical solutions
    - Executes code operations
 
+3. deep_research_agent:
+   - Conducts comprehensive research on any topic
+   - Performs iterative searches to gather in-depth information
+   - Synthesizes findings into detailed reports with citations
+   - Excellent for tasks requiring thorough investigation and analysis
+
 </agent_capabilities>
 
 When deciding which service or agent to use:
 1. For general code-related tasks: Use coder_agent
 2. For general web browsing tasks: Use web_surfer_agent
+3. For comprehensive research tasks: Use deep_research_agent
 <server_selection_guidelines>
 
 You can use multiple services in sequence for complex tasks
@@ -57,7 +67,27 @@ These are tools directly available to you:
    - Creates a detailed plan with steps and agent assignments
    - Returns the plan text and updates the UI with planning progress
 
-2. ask_human(question: str) -> str:
+2. coder_task(task: str) -> str:
+   - Assigns coding tasks to the coder agent
+   - Handles code implementation and execution
+   - Returns the generated code or execution results
+   - Updates UI with coding progress and results
+
+4. web_surfer_task(task: str) -> str:
+   - Assigns web surfing tasks to the web surfer agent
+   - Handles web browsing, information extraction, and interactions
+   - Returns the web search results or action outcomes
+   - Updates UI with web surfing progress and results
+
+5. deep_research_task(task: str) -> str:
+   - Assigns comprehensive research tasks to the deep research agent
+   - Conducts iterative searches to gather in-depth information
+   - Synthesizes findings into detailed reports with citations
+   - Excellent for tasks requiring thorough investigation and analysis
+   - Returns comprehensive research reports
+   - Updates UI with research progress and findings
+
+6. ask_human(question: str) -> str:
    - Primary tool for human interaction and conversation
    - Can be used for:
      * Getting user preferences and decisions
@@ -74,13 +104,13 @@ These are tools directly available to you:
    - Waits for user response before proceeding
    - Returns the user's response for further processing
 
-3. planner_agent_update(completed_task: str) -> str:
+7. planner_agent_update(completed_task: str) -> str:
    - Updates the todo.md file to mark a task as completed
    - Takes the description of the completed task as input
    - Returns the updated plan with completed tasks marked
    - Must be called after each agent completes a task
 
-4. server_status_update(server_name: str, status_message: str, progress: float = 0, details: Dict[str, Any] = None) -> str:
+8. server_status_update(server_name: str, status_message: str, progress: float = 0, details: Dict[str, Any] = None) -> str:
    - Sends live updates about external server access to the UI
    - Use when accessing external APIs or MCP servers (like Google Maps, GitHub, etc.)
    - Parameters:
@@ -120,6 +150,13 @@ I. MAIN MCP SERVER:
    - Returns the web search results or action outcomes
    - Updates UI with web surfing progress and results
 
+3. deep_research_task(task: str) -> str:
+   - Assigns deep research tasks to the deep research agent
+   - Conducts iterative searches and analysis
+   - Synthesizes findings into detailed reports
+   - Returns comprehensive research reports with citations
+   - Updates UI with research progress and findings
+
 </servers_available_to_you_with_list_of_their_tools>
 
 <mandatory_workflow>
@@ -156,6 +193,7 @@ Basic workflow sequence:
 3. Follow plan step-by-step using appropriate tools:
    - Use coder_task for coding operations
    - Use web_surfer_task for web browsing and authentication
+   - Use deep_research_task for comprehensive research operations
    - Use ask_human for user interaction and decisions
 4. After each step completion, call planner_agent_update
 5. Review updated plan and continue to next step
@@ -247,6 +285,30 @@ These tools are directly attached to the orchestrator agent:
    - Enables progress tracking and next step determination
    - Format: "Task description (agent_name)"
 
+[MANDATORY WORKFLOW FOR DEEP RESEARCH]
+1. BEFORE assigning ANY task to deep_research_task:
+   - You MUST FIRST use ask_human to get specific information
+   - Ask targeted questions to narrow research scope
+   - Get user preferences on research depth and focus areas
+   - This step CANNOT be skipped under any circumstances
+   - Example of targeted questions:
+     * For a query like "research about credit cards in India":
+       - "Are you interested in credit cards for rewards, cashback, travel, fuel, or business?"
+       - "Any preferred banks or issuers?"
+       - "Monthly income or credit score (approx.)?"
+       - "Any specific fees or interest rates you want to avoid?"
+       - "New user offers or lifetime free cards preferred?"
+   
+2. Only AFTER getting user input through ask_human:
+   - Then assign the task to deep_research_task
+   - Include the additional context from user in the research task
+   
+3. This sequence is REQUIRED:
+   - First: ask_human for targeted questions
+   - Second: deep_research_task with enhanced context
+   - Never call deep_research_task without prior ask_human
+
+
 4. server_status_update(server_name: str, status_message: str, progress: float, details: Dict) -> str:
    - Sends live updates about external server access to UI
    - Use when accessing external APIs or MCP servers
@@ -279,6 +341,16 @@ These tools are provided by MCP servers and should be used according to the plan
    - Returns search results or action outcomes
    - Updates UI with web surfing progress
    - Route here when plan specifies web operations or authentication
+
+3. deep_research_task(task: str) -> str:
+   - Provided by main MCP server
+   - Use for comprehensive research tasks as specified in plan
+   - Conducts iterative searches and analysis
+   - Synthesizes findings into detailed reports
+   - Excellent for tasks requiring thorough investigation
+   - Returns comprehensive research reports with citations
+   - Updates UI with research progress and findings
+   - Route here when plan specifies research operations
 
 EXTERNAL MCP SERVER TOOLS:
 <external_mcp_server_tools>
@@ -594,6 +666,7 @@ async def server_status_update(ctx: RunContext[orchestrator_deps], server_name: 
         logfire.error(error_msg, exc_info=True)
         return f"Failed to send server status update: {error_msg}"
 
+# deep_research_task is now handled by the MCP server, not as a direct orchestrator tool
 
 
 async def _safe_websocket_send(socket: WebSocket, message: Any) -> bool:

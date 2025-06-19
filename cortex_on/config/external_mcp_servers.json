@@ -7,7 +7,7 @@
         ],
         "env": {},
         "description": "GitHub MCP server for repository operations",
-        "status": "enabled",
+        "status": "disabled",
         "secret_key": "GITHUB_PERSONAL_ACCESS_TOKEN"
     },
     "google-maps": {
@@ -16,23 +16,20 @@
             "-y",
             "@modelcontextprotocol/server-google-maps"
         ],
-        "env": {
-            "GOOGLE_MAPS_API_KEY": ""
-        },
+        "env": {},
         "description": "Google Maps MCP server for geocoding, directions, and place search",
-        "status": "enabled",
+        "status": "disabled",
         "secret_key": "GOOGLE_MAPS_API_KEY"
     },
     "pinecone": {
-      "command": "npx",
-      "args": [
-        "-y", "@pinecone-database/mcp"
-      ],
-      "env": {
-        "PINECONE_API_KEY": ""
-      },
-      "description": "Pinecone MCP server for vector database operations, index management, and vector search",
-      "status": "enabled",
-      "secret_key": "PINECONE_API_KEY"
+        "command": "npx",
+        "args": [
+            "-y",
+            "@pinecone-database/mcp"
+        ],
+        "env": {},
+        "description": "Pinecone MCP server for vector database operations, index management, and vector search",
+        "status": "disabled",
+        "secret_key": "PINECONE_API_KEY"
     }
 }

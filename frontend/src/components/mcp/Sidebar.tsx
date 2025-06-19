@@ -23,17 +23,17 @@ const Sidebar = ({ onServiceSelect }: SidebarProps) => {
   }>({ isOpen: false, serverName: '' });
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const fetchData = async () => {
-    try {
-      const response = await fetch('http://localhost:8081/agent/mcp/servers');
-      const data = await response.json();
-      setServers(data);
-    } catch (error) {
-      console.error('API call failed:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+    const fetchData = async () => {
+      try {
+        const response = await fetch('http://localhost:8081/agent/mcp/servers');
+        const data = await response.json();
+        setServers(data);
+      } catch (error) {
+        console.error('API call failed:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
 
   useEffect(() => {
     fetchData();
@@ -74,7 +74,7 @@ const Sidebar = ({ onServiceSelect }: SidebarProps) => {
 
   return (
     <>
-      <div className="w-80 bg-gray-800/50 backdrop-blur-sm border-r border-gray-600/30 p-6 flex flex-col gap-4">
+    <div className="w-80 bg-gray-800/50 backdrop-blur-sm border-r border-gray-600/30 p-6 flex flex-col gap-4">
         {/* Add Server Button */}
         <button
           onClick={() => setIsAddModalOpen(true)}
@@ -88,15 +88,15 @@ const Sidebar = ({ onServiceSelect }: SidebarProps) => {
         <div className="border-t border-gray-700/50 my-2" />
 
         {/* Server List */}
-        {servers.map((server) => {
-          const IconComponent = Bot;
-          return (
-            <button
-              key={server.name}
-              onClick={() => onServiceSelect(server.name)}
+      {servers.map((server) => {
+        const IconComponent = Bot;
+        return (
+          <button
+            key={server.name}
+            onClick={() => onServiceSelect(server.name)}
               className="relative flex items-center gap-3 p-4 bg-gray-700/30 border border-gray-600/50 rounded-xl text-white hover:bg-gray-600/40 hover:border-purple-400/50 transition-all duration-200 hover:scale-105 group"
-            >
-              <IconComponent className="w-5 h-5 text-gray-300 group-hover:text-purple-400 transition-colors" />
+          >
+            <IconComponent className="w-5 h-5 text-gray-300 group-hover:text-purple-400 transition-colors" />
               <span className="font-medium flex-1 text-left">
                 {server.name.charAt(0).toUpperCase() + server.name.slice(1)}
               </span>
@@ -109,10 +109,10 @@ const Sidebar = ({ onServiceSelect }: SidebarProps) => {
               >
                 <Trash2 className="w-4 h-4 text-gray-400 hover:text-red-400" />
               </button>
-            </button>
-          );
-        })}
-      </div>
+          </button>
+        );
+      })}
+    </div>
 
       {/* Add Server Modal */}
       <AddServerModal

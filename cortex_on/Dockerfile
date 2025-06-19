@@ -21,7 +21,8 @@ RUN apt-get update -y && apt-get install build-essential -y
 
 # Add the --system flag to uv pip install
 RUN uv pip install --system --no-cache-dir -r requirements.txt
-
+RUN playwright install chromium
+RUN playwright install-deps
 COPY . .
 
 # Set environment variables

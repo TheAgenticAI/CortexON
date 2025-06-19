@@ -193,7 +193,7 @@ const ServiceView: React.FC<ServiceViewProps> = ({ service, onServerStatusChange
     <div className="p-8 space-y-8">
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <h1 className="text-4xl font-bold">{service.charAt(0).toUpperCase() + service.slice(1)} MCP</h1>
+        <h1 className="text-4xl font-bold">{service.charAt(0).toUpperCase() + service.slice(1)} MCP</h1>
           <Button
             variant="ghost"
             size="icon"
@@ -224,47 +224,47 @@ const ServiceView: React.FC<ServiceViewProps> = ({ service, onServerStatusChange
 
       <div className="space-y-4 max-w-xl">
         {!isEnabled && (
-          <Input
-            type="password"
+        <Input
+          type="password"
             placeholder={`Enter your ${service.charAt(0).toUpperCase() + service.slice(1)} API Token`}
-            className="bg-gray-800/50 border-gray-700"
-            value={token}
-            onChange={(e) => setToken(e.target.value)}
-          />
+          className="bg-gray-800/50 border-gray-700"
+          value={token}
+          onChange={(e) => setToken(e.target.value)}
+        />
         )}
         
         <div className="flex gap-4">
           {!isEnabled ? (
-            <Button
-              className="px-8"
-              onClick={() => handleToggle("enable")}
-              disabled={isLoading || !token.trim()}
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Enabling...
-                </>
-              ) : (
-                "Enable"
-              )}
-            </Button>
+          <Button
+            className="px-8"
+            onClick={() => handleToggle("enable")}
+            disabled={isLoading || !token.trim()}
+          >
+            {isLoading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Enabling...
+              </>
+            ) : (
+              "Enable"
+            )}
+          </Button>
           ) : (
-            <Button
-              variant="destructive"
-              className="px-8"
-              onClick={() => handleToggle("disable")}
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Disabling...
-                </>
-              ) : (
-                "Disable"
-              )}
-            </Button>
+          <Button
+            variant="destructive"
+            className="px-8"
+            onClick={() => handleToggle("disable")}
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Disabling...
+              </>
+            ) : (
+              "Disable"
+            )}
+          </Button>
           )}
         </div>
       </div>

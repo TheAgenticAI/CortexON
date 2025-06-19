@@ -8,6 +8,7 @@ import {
   SquareCode,
   SquareSlash,
   X,
+  Search,
 } from "lucide-react";
 import {useEffect, useRef, useState} from "react";
 import favicon from "../../assets/Favicon-contexton.svg";
@@ -46,8 +47,45 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
   const [animateSubmit, setAnimateSubmit] = useState<boolean>(false);
 
   const [humanInputValue, setHumanInputValue] = useState<string>("");
+  
+  // Deep Research Agent tracking
+  const [deepResearchTasks, setDeepResearchTasks] = useState<Array<{
+    id: string;
+    title: string;
+    completed: boolean;
+    current: boolean;
+    priority?: number;
+    dependencies?: string[];
+    findingsSummary?: string;
+    knowledgeGaps?: string[];
+  }>>([]);
+  const [currentTaskProgress, setCurrentTaskProgress] = useState<string>("");
+  const [researchSources, setResearchSources] = useState<Array<{
+    title: string;
+    url: string;
+    type: string;
+    snippet?: string;
+    domain?: string;
+  }>>([]);
+  const [researchFindings, setResearchFindings] = useState<string[]>([]);
+  const [currentAction, setCurrentAction] = useState<string>("");
+  const [liveSteps, setLiveSteps] = useState<string[]>([]);
+  const [overallProgress, setOverallProgress] = useState({ current: 0, total: 0, percent: 0 });
+  const [currentQuery, setCurrentQuery] = useState<string>("");
+  const [urlPreviews, setUrlPreviews] = useState<Array<{
+    url: string;
+    domain: string;
+    preview: string;
+    timestamp: number;
+  }>>([]);
+  // LLM streaming thoughts
+  const [thinkingThoughts, setThinkingThoughts] = useState<Array<{
+    content: string;
+    reasoning_type: string;
+  }>>([]);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const thinkingScrollRef = useRef<HTMLDivElement>(null);
 
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const messages = useSelector(
@@ -144,6 +182,165 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
         }, 300);
       } else if (agent_name !== "Web Surfer") {
         setLiveUrl("");
+      }
+
+      // Parse Deep Research Agent data
+      if (agent_name === "Deep Research Agent" && steps) {
+        console.log("🔍 Deep Research Agent Steps:", steps); // Debug log
+        
+        steps.forEach((step, index) => {
+          console.log(`📝 Processing step ${index}:`, step); // Debug log
+          
+          // Try to parse as JSON first
+          try {
+            const data = JSON.parse(step);
+            console.log("📊 Parsed JSON data:", data);
+            
+            switch (data.type) {
+              case "plan_created":
+                // Set all tasks from the plan
+                if (data.tasks) {
+                  setDeepResearchTasks(data.tasks.map((task: any) => ({
+                    id: task.id,
+                    title: task.title,
+                    completed: false,
+                    current: false,
+                    priority: task.priority,
+                    dependencies: task.dependencies
+                  })));
+                  setOverallProgress({ current: 0, total: data.total_tasks, percent: 0 });
+                }
+                break;
+                
+              case "task_started":
+                // Update current task
+                setDeepResearchTasks(prev => prev.map(task => ({
+                  ...task,
+                  current: task.id === data.task_id
+                })));
+                setCurrentTaskProgress(data.task_title);
+                if (data.progress) {
+                  // Adjust progress to show actual completed tasks (current - 1)
+                  setOverallProgress({
+                    ...data.progress,
+                    current: data.progress.current
+                  });
+                }
+                break;
+                
+              case "task_completed":
+                // Mark task as completed and clear current task progress
+                setDeepResearchTasks(prev => prev.map(task => 
+                  task.id === data.task_id 
+                    ? { 
+                        ...task, 
+                        completed: true, 
+                        current: false,
+                        findingsSummary: data.findings_summary,
+                        knowledgeGaps: data.knowledge_gaps
+                      }
+                    : task
+                ));
+                // Clear current task progress when task completes
+                setCurrentTaskProgress("");
+                setCurrentAction("");
+                if (data.progress) {
+                  setOverallProgress(data.progress);
+                }
+                break;
+                
+              case "search_completed":
+                // Add sources with better structure
+                if (data.sources) {
+                  setCurrentQuery(data.query);
+                  setResearchSources(prev => {
+                    const newSources = data.sources.filter((source: any) => 
+                      !prev.some(existing => existing.url === source.url)
+                    ).map((source: any) => ({
+                      ...source,
+                      type: "search",
+                      domain: source.url.replace(/https?:\/\//, '').split('/')[0]
+                    }));
+                    return [...prev, ...newSources];
+                  });
+                }
+                break;
+                
+              case "content_extracted":
+                // Add URL preview
+                if (data.url && data.preview) {
+                  setUrlPreviews(prev => {
+                    const exists = prev.some(p => p.url === data.url);
+                    if (!exists) {
+                      return [...prev, {
+                        url: data.url,
+                        domain: data.domain,
+                        preview: data.preview,
+                        timestamp: Date.now()
+                      }].slice(-10); // Keep last 10 previews
+                    }
+                    return prev;
+                  });
+                }
+                break;
+                
+              case "findings_discovered":
+                // Add findings from analysis
+                if (data.findings) {
+                  setResearchFindings(prev => {
+                    if (!prev.includes(data.findings)) {
+                      return [...prev, data.findings].slice(-10); // Keep last 10 findings
+                    }
+                    return prev;
+                  });
+                }
+                break;
+                
+              case "agent_thoughts":
+                // Push latest thoughts (keep last 10)
+                if (data.content) {
+                  setThinkingThoughts(prev => {
+                    const newThought = {
+                      content: data.content,
+                      reasoning_type: data.reasoning_type || "general",
+                    };
+
+                    // Merge and deduplicate by content while preserving order (latest occurrence wins)
+                    const merged = [...prev, newThought];
+                    const deduped = merged.filter(
+                      (t, idx, arr) =>
+                        arr.findIndex(other => other.content === t.content) === idx
+                    );
+
+                    // Keep only the last 10 unique thoughts
+                    return deduped.slice(-10);
+                  });
+                }
+                break;
+                
+              default:
+                // For other types, just update current action
+                if (data.message) {
+                  setCurrentAction(data.message);
+                }
+            }
+            
+            // Always add to live steps
+            setLiveSteps(prev => [...prev, data.message || step].slice(-10));
+            
+          } catch (e) {
+            // If not JSON, parse as before (fallback)
+            console.log("Not JSON, parsing as text:", step);
+            
+            // Simple text parsing for backward compatibility
+            if (/working|processing|executing|starting|current/i.test(step)) {
+              setCurrentAction(step);
+            }
+            
+            // Add to live steps
+            setLiveSteps(prev => [...prev, step].slice(-10));
+          }
+        });
       }
 
       // Check if we already have a message with this message_id
@@ -367,6 +564,11 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
           />
         );
 
+      case "Deep Research Agent":
+        return (
+          <Search size={20} absoluteStrokeWidth className="text-primary" />
+        );
+
       default:
         return (
           <Component size={20} absoluteStrokeWidth className="text-primary" />
@@ -397,6 +599,18 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
               className="text-primary"
             />
             Check Executor Results
+          </p>
+        );
+
+      case "Deep Research Agent":
+        return (
+          <p className="flex items-center gap-4">
+            <Search
+              size={20}
+              absoluteStrokeWidth
+              className="text-primary"
+            />
+            View Research Report
           </p>
         );
 
@@ -535,8 +749,29 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
     }
   };
 
+  // Check if Deep Research Agent is active
+  const isDeepResearchActive = messages.some(message => 
+    message.data?.some(systemMessage => systemMessage.agent_name === "Deep Research Agent")
+  );
+
+  // Auto-scroll thinking section to newest thought
+  useEffect(() => {
+    if (thinkingScrollRef.current && thinkingThoughts.length > 0) {
+      const scrollElement = thinkingScrollRef.current;
+      setTimeout(() => {
+        scrollElement.scrollTo({
+          top: scrollElement.scrollHeight,
+          behavior: 'smooth'
+        });
+      }, 100);
+    }
+  }, [thinkingThoughts]);
+
   return (
     <div className="w-full h-full flex justify-center items-center px-4 gap-4">
+      {/* Deep Research Interface */}
+
+
       <div
         className="h-full flex flex-col items-center space-y-4 pt-8 transition-all duration-500 ease-in-out relative"
         style={{width: chatContainerWidth}}
@@ -776,6 +1011,295 @@ const ChatList = ({isLoading, setIsLoading}: ChatListPageProps) => {
                                 </div>
                               )}
                             </div>
+                          ) : systemMessage.agent_name === "Deep Research Agent" ? (
+                            <Card
+                              key={systemMessage.message_id || index}
+                              className="bg-background mb-4 transition-all duration-500 ease-in-out transform hover:shadow-md hover:-translate-y-1 animate-fade-up animate-once animate-duration-700 max-w-full"
+                              style={{animationDelay: `${index * 300}ms`}}
+                            >
+                              <div className="flex h-[600px] w-full overflow-hidden">
+                                {/* Main Content */}
+                                <div className="flex-1 h-full p-4 space-y-4 overflow-y-auto pr-2">
+                                  <div className="bg-secondary border flex items-center gap-2 mb-4 px-3 py-1 rounded-md w-max transform transition-transform duration-300 hover:scale-110 animate-fade-right animate-once animate-duration-500">
+                                    {getAgentIcon(systemMessage.agent_name)}
+                                    <span className="text-white text-base">
+                                      {systemMessage.agent_name}
+                                    </span>
+                                  </div>
+                                  
+                                  {/* Research Overview */}
+                                  <div className="bg-secondary/10 rounded-lg p-4 space-y-3">
+                                    <h4 className="text-sm font-medium text-foreground flex items-center gap-2">
+                                      <BrainCircuit size={16} className="text-primary" />
+                                      Research Intelligence
+                                    </h4>
+                                    
+                                    {/* Key Metrics */}
+                                    <div className="bg-background/50 rounded-lg p-3 text-center">
+                                      <p className="text-2xl font-bold text-primary">{researchSources.length}</p>
+                                      <p className="text-xs text-muted-foreground">Total Sources</p>
+                                    </div>
+                                  </div>
+                                  
+                                  {/* Current Focus */}
+                                  {deepResearchTasks.length > 0 && (
+                                    <div className="bg-primary/5 border border-primary/20 rounded-lg p-4">
+                                      <h4 className="text-sm font-medium text-foreground mb-2">Current Focus</h4>
+                                      <p className="text-sm text-muted-foreground">
+                                        {currentTaskProgress || "Awaiting task..."}
+                                      </p>
+                                      
+                                    </div>
+                                  )}
+                                  
+                                  {/* Thinking Section */}
+                                  {thinkingThoughts.length > 0 && (
+                                    <div className="space-y-3">
+                                      <h4 className="text-sm font-medium text-foreground flex items-center gap-2">
+                                        <div className="w-1 h-4 bg-primary rounded-full animate-pulse"></div>
+                                        Thinking
+                                      </h4>
+                                      <div 
+                                        ref={thinkingScrollRef}
+                                        className="space-y-2 max-h-64 overflow-y-auto pr-1 scroll-smooth"
+                                      >
+                                        {thinkingThoughts.slice(-5).map((thought, idx) => (
+                                          <div 
+                                            key={idx} 
+                                            className={`bg-secondary/10 rounded-lg p-2 text-xs text-muted-foreground leading-relaxed transform transition-all duration-500 ease-out ${
+                                              idx === thinkingThoughts.slice(-5).length - 1 
+                                                ? 'animate-slide-in-bottom opacity-100 translate-y-0 border border-primary/20' 
+                                                : 'opacity-80'
+                                            }`}
+                                            style={{
+                                              animationDelay: `${idx * 100}ms`
+                                            }}
+                                          >
+                                            {thought.content}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                  
+                                  {/* Recent Discoveries */}
+                                  {researchFindings.length > 0 && (
+                                    <div className="space-y-3">
+                                      <h4 className="text-sm font-medium text-foreground">Recent Discoveries</h4>
+                                      <div className="space-y-2">
+                                        {researchFindings.slice(-2).map((finding, idx) => (
+                                          <div key={idx} className="bg-secondary/10 rounded-lg p-3">
+                                            <div className="flex items-start gap-2">
+                                              <BrainCircuit size={14} className="text-primary mt-0.5 flex-shrink-0" />
+                                              <p className="text-xs text-muted-foreground line-clamp-3">
+                                                {finding}
+                                              </p>
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+
+                                                                {/* Deep Research Sidebar - Futuristic Design */}
+                                <div className="w-96 bg-gradient-to-b from-secondary/5 to-secondary/10 border-l border-border overflow-hidden">
+                                  <div className="h-full flex flex-col">
+                                    {/* Header with Progress */}
+                                    <div className="p-4 border-b border-border bg-background/50 backdrop-blur-sm">
+                                      <div className="flex items-center justify-between mb-2">
+                                        <div className="flex items-center gap-3">
+                                          <div className="relative">
+                                            <div className="w-10 h-10 bg-primary/20 rounded-xl flex items-center justify-center">
+                                              <Search size={18} className="text-primary" />
+                                            </div>
+                                            <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
+                                          </div>
+                                          <div>
+                                            <h3 className="text-base font-semibold text-foreground">Deep Research</h3>
+                                            <p className="text-xs text-muted-foreground">Autonomous Intelligence</p>
+                                          </div>
+                                        </div>
+                                        <div className="text-right">
+                                          <p className="text-2xl font-bold text-primary">{overallProgress.percent}%</p>
+                                          <p className="text-xs text-muted-foreground">{overallProgress.current}/{overallProgress.total} tasks</p>
+                                        </div>
+                                      </div>
+                                      
+                                      {/* Overall Progress Bar */}
+                                      <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
+                                        <div 
+                                          className="h-full bg-gradient-to-r from-primary to-primary/60 transition-all duration-1000 ease-out"
+                                          style={{ width: `${overallProgress.percent}%` }}
+                                        ></div>
+                                      </div>
+                                    </div>
+
+                                    {/* Scrollable Content */}
+                                    <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                                      {/* Task Timeline - Show only current and previous tasks */}
+                                      {deepResearchTasks.length > 0 && (
+                                        <div className="space-y-3">
+                                          <h4 className="text-sm font-medium text-foreground flex items-center gap-2">
+                                            <div className="w-1 h-4 bg-primary rounded-full"></div>
+                                            Research Progress
+                                          </h4>
+                                          <div className="relative">
+                                            {(() => {
+                                              // Progressive display: show completed tasks + current task + next task (if current exists)
+                                              const completedTasks = deepResearchTasks.filter(task => task.completed);
+                                              const currentTask = deepResearchTasks.find(task => task.current);
+                                              const currentIndex = currentTask ? deepResearchTasks.findIndex(task => task.current) : -1;
+                                              
+                                              const tasksToShow = [];
+                                              
+                                              // Add all completed tasks
+                                              completedTasks.forEach(task => {
+                                                tasksToShow.push(task);
+                                              });
+                                              
+                                              // Add current task if it exists and isn't already in completed
+                                              if (currentTask && !currentTask.completed) {
+                                                tasksToShow.push(currentTask);
+                                              }
+                                              
+                                              // Add next task if current task exists and there's a next one
+                                              if (currentIndex >= 0 && currentIndex < deepResearchTasks.length - 1) {
+                                                const nextTask = deepResearchTasks[currentIndex + 1];
+                                                if (!nextTask.completed && !nextTask.current) {
+                                                  tasksToShow.push(nextTask);
+                                                }
+                                              }
+                                              
+                                              return tasksToShow.map((task, index) => (
+                                                <div 
+                                                  key={task.id} 
+                                                  className={`relative transform transition-all duration-700 ease-out ${
+                                                    task.current ? 'animate-slide-in-right' : ''
+                                                  }`}
+                                                  style={{
+                                                    animationDelay: `${index * 200}ms`
+                                                  }}
+                                                >
+                                                  <div className="relative mb-6">
+                                                    {/* Connection Line */}
+                                                    {index > 0 && (
+                                                      <div className={`absolute left-2 -top-6 w-0.5 h-6 transition-colors duration-500 ${
+                                                        tasksToShow[index - 1].completed ? 'bg-primary' : 'bg-border'
+                                                      }`}></div>
+                                                    )}
+                                                    
+                                                    {/* Task Timeline Item */}
+                                                    <div className="flex items-start gap-3">
+                                                      {/* Task Node */}
+                                                      <div className="flex-shrink-0 mt-1">
+                                                        <div className={`w-4 h-4 rounded-full border-2 transition-all duration-500 ${
+                                                          task.completed 
+                                                            ? 'bg-primary border-primary shadow-md' 
+                                                            : task.current 
+                                                            ? 'bg-background border-primary animate-pulse shadow-md' 
+                                                            : 'bg-background border-border'
+                                                        }`}>
+                                                          {task.completed && (
+                                                            <svg className="w-full h-full p-0.5 text-primary-foreground" fill="currentColor" viewBox="0 0 20 20">
+                                                              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                                            </svg>
+                                                          )}
+                                                          {task.current && (
+                                                            <div className="w-2 h-2 bg-primary rounded-full absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 animate-ping"></div>
+                                                          )}
+                                                        </div>
+                                                      </div>
+                                                      
+                                                      {/* Task Content */}
+                                                      <div className={`flex-1 min-w-0 transition-all duration-300 ${
+                                                        task.current ? 'bg-primary/5 px-3 py-2 rounded-lg border border-primary/10' : ''
+                                                      }`}>
+                                                        <p className={`text-sm font-medium leading-relaxed ${
+                                                          task.current ? 'text-primary' : 
+                                                          task.completed ? 'text-foreground' : 'text-muted-foreground'
+                                                        }`}>
+                                                          {task.title}
+                                                        </p>
+                                                      </div>
+                                                    </div>
+                                                  </div>
+                                                </div>
+                                              ));
+                                            })()}
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {/* Source List */}
+                                      {researchSources.length > 0 && (
+                                        <div className="space-y-3">
+                                          <h4 className="text-sm font-medium text-foreground flex items-center gap-2">
+                                            <div className="w-1 h-4 bg-primary rounded-full"></div>
+                                            Discovered Sources ({researchSources.length})
+                                          </h4>
+                                          <div className="space-y-2 max-h-64 overflow-y-auto">
+                                            {researchSources.map((source, idx) => (
+                                              <div 
+                                                key={idx}
+                                                className="group relative bg-secondary/10 rounded-lg p-3 hover:bg-secondary/20 transition-all cursor-pointer"
+                                              >
+                                                <div className="flex items-start gap-2">
+                                                  <div className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 bg-primary/10">
+                                                    <Globe size={12} className="text-primary/70" />
+                                                  </div>
+                                                  <div className="flex-1 min-w-0">
+                                                    <p className="text-xs font-medium text-foreground line-clamp-1">
+                                                      {source.title}
+                                                    </p>
+                                                    <p className="text-xs text-muted-foreground truncate">
+                                                      {source.domain || source.url.replace(/https?:\/\//, '').split('/')[0]}
+                                                    </p>
+                                                    {source.snippet && (
+                                                      <p className="text-xs text-muted-foreground line-clamp-2 mt-1">
+                                                        {source.snippet}
+                                                      </p>
+                                                    )}
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {/* Current Query */}
+                                      {currentQuery && (
+                                        <div className="space-y-3">
+                                          <h4 className="text-sm font-medium text-foreground flex items-center gap-2">
+                                            <div className="w-1 h-4 bg-primary rounded-full"></div>
+                                            Active Search
+                                          </h4>
+                                          <div className="bg-primary/5 border border-primary/20 rounded-lg p-3">
+                                            <p className="text-xs text-foreground italic">"{currentQuery}"</p>
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {/* Live Activity Stream removed */}
+                                    </div>
+
+                                    {/* Footer Status */}
+                                    <div className="p-4 border-t border-border bg-background/50 backdrop-blur-sm">
+                                      <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                          <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                                          <span className="text-xs text-muted-foreground">System Active</span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                          <span className="text-xs text-muted-foreground">{researchSources.length} total sources</span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </Card>
                           ) : (
                             <Card
                               key={systemMessage.message_id || index}

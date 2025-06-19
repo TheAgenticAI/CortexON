@@ -18,6 +18,9 @@ from agents.code_agent import coder_agent
 from agents.code_agent import coder_agent, CoderAgentDeps
 from agents.web_surfer import WebSurfer
 
+# Import deep research agent
+from agents.deep_research_agent import deep_research_agent, deep_research_deps
+
 # Server manager to handle multiple MCP servers
 class ServerManager:
     def __init__(self):
@@ -97,7 +100,7 @@ def register_tools_for_main_mcp_server(websocket: WebSocket, port=None) -> None:
         return
     
     # First, unregister existing tools if they exist
-    tool_names = ["plan_task", "code_task", "web_surf_task", "ask_human", "planner_agent_update"]
+    tool_names = ["plan_task", "code_task", "web_surf_task", "deep_research_task", "ask_human", "planner_agent_update"]
     for tool_name in tool_names:
         if tool_name in server_instance._tool_manager._tools:
             del server_instance._tool_manager._tools[tool_name]
@@ -347,6 +350,79 @@ def register_tools_for_main_mcp_server(websocket: WebSocket, port=None) -> None:
             
     #         return f"Failed to update plan: {error_msg}"
     
+    async def deep_research_task(task: str) -> str:
+        """Assigns deep research tasks to the deep research agent"""
+        try:
+            logfire.info(f"Assigning deep research task: {task}")
+            # Create a new StreamResponse for Deep Research Agent
+            research_stream_output = StreamResponse(
+                agent_name="Deep Research Agent",
+                instructions=task,
+                steps=[],
+                output="",
+                status_code=0,
+                message_id=str(uuid.uuid4())
+            )
+
+            await _safe_websocket_send(websocket, research_stream_output)
+
+            # Update deep research stream
+            research_stream_output.steps.append("Initializing deep research...")
+            await _safe_websocket_send(websocket, research_stream_output)
+
+            # Setup storage path for this research
+            research_id = str(uuid.uuid4())
+            base_dir = os.path.abspath(os.path.dirname(__file__))
+            storage_path = os.path.join(base_dir, "research_data", research_id)
+            os.makedirs(storage_path, exist_ok=True)
+
+            # Create deps for deep research agent
+            deps_for_research_agent = deep_research_deps(
+                websocket=websocket,
+                stream_output=research_stream_output,
+                storage_path=storage_path
+            )
+
+            # Run deep research agent with usage limits
+            from pydantic_ai.usage import UsageLimits
+            usage_limits = UsageLimits(request_limit=150)
+            
+            research_response = await deep_research_agent.run(
+                user_prompt=task,
+                deps=deps_for_research_agent,
+                usage_limits=usage_limits
+            )
+
+            # Extract response data, handle both dict and string return types
+            if hasattr(research_response.data, 'report'):
+                research_report = research_response.data.report
+            elif isinstance(research_response.data, dict) and 'report' in research_response.data:
+                research_report = research_response.data['report']
+            else:
+                research_report = str(research_response.data)
+
+            # Update research_stream_output with results
+            research_stream_output.output = research_report
+            research_stream_output.status_code = 200
+            research_stream_output.steps.append("Deep research completed successfully")
+            await _safe_websocket_send(websocket, research_stream_output)
+
+            # Add a reminder in the result message to update the plan using planner_agent_update
+            response_with_reminder = f"{research_report}\n\nReminder: You must now call planner_agent_update with the completed task description: \"{task} (deep_research_agent)\""
+
+            return response_with_reminder
+        except Exception as e:
+            error_msg = f"Error assigning deep research task: {str(e)}"
+            logfire.error(error_msg, exc_info=True)
+
+            # Update research_stream_output with error
+            if 'research_stream_output' in locals():
+                research_stream_output.steps.append(f"Deep research task failed: {str(e)}")
+                research_stream_output.status_code = 500
+                await _safe_websocket_send(websocket, research_stream_output)
+
+            return f"Failed to assign deep research task: {error_msg}"
+    
     # Helper function for websocket communication
     async def _safe_websocket_send(socket: WebSocket, message: Any) -> bool:
         """Safely send message through websocket with error handling"""
@@ -365,6 +441,7 @@ def register_tools_for_main_mcp_server(websocket: WebSocket, port=None) -> None:
         # "plan_task": (plan_task, "Plans the task and assigns it to the appropriate agents"),
         "code_task": (code_task, "Assigns coding tasks to the coder agent"),
         "web_surf_task": (web_surf_task, "Assigns web surfing tasks to the web surfer agent"),
+        "deep_research_task": (deep_research_task, "Assigns deep research tasks to the deep research agent"),
         # "planner_agent_update": (planner_agent_update, "Updates the todo.md file to mark a task as completed")
     }
     
