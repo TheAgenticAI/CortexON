@@ -1,3 +1,4 @@
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/TheAgenticAI/CortexON)
 <p align="center">
   <img src="frontend/src/assets/CortexON_logo_dark.svg" alt="CortexOn Logo" width="500"/>
 </p>
