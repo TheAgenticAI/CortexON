@@ -308,7 +308,7 @@ async def web_surfer_task(ctx: RunContext[orchestrator_deps], task: str) -> str:
         await _safe_websocket_send(ctx.deps.websocket, web_surfer_stream_output)
         
         # Initialize WebSurfer agent
-        web_surfer_agent = WebSurfer(api_url="http://localhost:8000/api/v1/web/stream")
+        web_surfer_agent = WebSurfer(api_url="http://agentic_browser:8000/api/v1/web/stream")
         
         # Run WebSurfer with its own stream_output
         success, message, messages = await web_surfer_agent.generate_reply(
