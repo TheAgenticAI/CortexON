@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   cortex_on:
     build:
@@ -9,8 +7,9 @@ services:
       - ./cortex_on:/app
     env_file:
       - .env
+    ports:
+      - "8081:8081"
     restart: always
-    network_mode: host
 
   agentic_browser:
     build:
@@ -20,8 +19,9 @@ services:
       - ./ta-browser:/app
     env_file:
       - .env
+    ports:
+      - "8000:8000"
     restart: always
-    network_mode: host
 
   frontend:
     build:
@@ -32,8 +32,9 @@ services:
       - /app/node_modules
     env_file:
       - .env
+    ports:
+      - "3000:3000"
     depends_on:
       - cortex_on
       - agentic_browser
     restart: always
-    network_mode: host

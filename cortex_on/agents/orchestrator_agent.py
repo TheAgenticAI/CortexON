@@ -307,8 +307,8 @@ async def web_surfer_task(ctx: RunContext[orchestrator_deps], task: str) -> str:
 
         await _safe_websocket_send(ctx.deps.websocket, web_surfer_stream_output)
         
-        # Initialize WebSurfer agent
-        web_surfer_agent = WebSurfer(api_url="http://localhost:8000/api/v1/web/stream")
+        # Initialize WebSurfer agent - will use environment variable or Docker service name
+        web_surfer_agent = WebSurfer()
         
         # Run WebSurfer with its own stream_output
         success, message, messages = await web_surfer_agent.generate_reply(
@@ -484,7 +484,7 @@ async def planner_agent_update(ctx: RunContext[orchestrator_deps], completed_tas
             logfire.error(error_msg, exc_info=True)
             
             planner_stream_output.steps.append(f"Plan update failed: {str(e)}")
-            planner_stream_output.status_code = a500
+            planner_stream_output.status_code = 500
             await _safe_websocket_send(ctx.deps.websocket, planner_stream_output)
             
             return f"Failed to update the plan: {error_msg}"
