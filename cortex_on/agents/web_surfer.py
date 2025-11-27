@@ -29,7 +29,13 @@ load_dotenv()
 TIMEOUT = 9999999999999999999999999999999999999999999
 
 class WebSurfer:
-    def __init__(self, api_url: str = "http://localhost:8000/api/v1/web/stream"):
+    def __init__(self, api_url: Optional[str] = None):
+        # Use environment variable or default to Docker service name, fallback to localhost
+        if api_url is None:
+            api_url = os.getenv(
+                "AGENTIC_BROWSER_URL", 
+                "http://agentic_browser:8000/api/v1/web/stream"
+            )
         self.api_url = api_url
         self.name = "Web Surfer Agent"
         self.description = "An agent that is a websurfer and a webscraper that  can access any web-page to extract information or perform actions."
