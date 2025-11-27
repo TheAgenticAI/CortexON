@@ -1,8 +1,10 @@
 # Standard library imports
+import json
 from typing import List, Optional
 
 # Third-party imports
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+import logfire
 
 # Local application imports
 from instructor import SystemInstructor
@@ -22,6 +24,30 @@ async def agent_chat(task: str) -> List:
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
-    while True:
-        data = await websocket.receive_text()
-        await generate_response(data, websocket)
+    try:
+        while True:
+            try:
+                data = await websocket.receive_text()
+                await generate_response(data, websocket)
+            except WebSocketDisconnect:
+                logfire.info("Client disconnected from WebSocket")
+                break
+            except Exception as e:
+                logfire.error(f"Error processing WebSocket message: {str(e)}")
+                # Try to send error to client if still connected
+                try:
+                    if websocket.client_state.CONNECTED:
+                        await websocket.send_text(json.dumps({"error": str(e)}))
+                except:
+                    pass
+                break
+    except WebSocketDisconnect:
+        logfire.info("WebSocket connection closed by client")
+    except Exception as e:
+        logfire.error(f"WebSocket endpoint error: {str(e)}")
+    finally:
+        try:
+            if websocket.client_state.CONNECTED:
+                await websocket.close()
+        except:
+            pass
