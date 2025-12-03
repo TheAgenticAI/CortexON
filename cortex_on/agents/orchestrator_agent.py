@@ -1,6 +1,7 @@
 import os
 import json
 import traceback
+import uuid
 from typing import List, Optional, Dict, Any, Union, Tuple
 from datetime import datetime
 from pydantic import BaseModel
@@ -16,12 +17,21 @@ from agents.planner_agent import planner_agent, update_todo_status
 from agents.code_agent import coder_agent, CoderAgentDeps
 from utils.ant_client import get_client
 
+
+class UserCancellationError(Exception):
+    """Custom exception for user-initiated cancellations"""
+    pass
+
 @dataclass
 class orchestrator_deps:
     websocket: Optional[WebSocket] = None
     stream_output: Optional[StreamResponse] = None
     # Add a collection to track agent-specific streams
     agent_responses: Optional[List[StreamResponse]] = None
+    plan_approved: bool = False
+    approved_plan_text: Optional[str] = None
+    require_browser_approval: bool = False
+    require_coder_approval: bool = False
 
 orchestrator_system_prompt = """You are an AI orchestrator that manages a team of agents to solve tasks. You have access to tools for coordinating the agents and managing the task flow.
 
@@ -110,6 +120,13 @@ orchestrator_system_prompt = """You are an AI orchestrator that manages a team o
    - Suggest manual alternatives
    - Block credential access
 
+[SECTION EXECUTION ORDER - CRITICAL]
+- Plans have numbered sections (## 1., ## 2., etc.). Execute them IN ORDER: Section 1 → 2 → 3.
+
+[USING APPROVED PLAN - CRITICAL - READ THIS CAREFULLY]
+- Once plan_task returns an approved plan, FORGET the original user query.
+- The approved plan IS your new source of truth. The user may have MODIFIED it.
+
 Basic workflow:
 1. Receive a task from the user.
 2. Plan the task by calling the planner agent through plan_task
@@ -173,6 +190,8 @@ orchestrator_agent = Agent(
 @orchestrator_agent.tool
 async def plan_task(ctx: RunContext[orchestrator_deps], task: str) -> str:
     """Plans the task and assigns it to the appropriate agents"""
+    planner_stream_output = None
+    MAX_PLAN_RETRIES = 5  # Maximum number of plan regeneration attempts
     try:
         logfire.info(f"Planning task: {task}")
         
@@ -191,25 +210,142 @@ async def plan_task(ctx: RunContext[orchestrator_deps], task: str) -> str:
             
         await _safe_websocket_send(ctx.deps.websocket, planner_stream_output)
         
-        # Update planner stream
-        planner_stream_output.steps.append("Planning task...")
-        await _safe_websocket_send(ctx.deps.websocket, planner_stream_output)
+        # Loop until plan is approved or cancelled
+        feedback = None
+        retry_count = 0
+        while retry_count < MAX_PLAN_RETRIES:
+            # Update planner stream
+            if feedback:
+                planner_stream_output.steps.append(f"Regenerating plan based on feedback: {feedback}")
+            else:
+                planner_stream_output.steps.append("Planning task...")
+            await _safe_websocket_send(ctx.deps.websocket, planner_stream_output)
+            
+            # Build prompt with feedback if this is a retry
+            planner_prompt = task
+            if feedback:
+                planner_prompt = f"{task}\n\nUser feedback on previous plan: {feedback}\n\nPlease regenerate the plan incorporating this feedback."
+            
+            # Run planner agent
+            planner_response = await planner_agent.run(user_prompt=planner_prompt)
+            
+            # Update planner stream with results
+            plan_text = planner_response.data.plan
+            
+            # Request approval (returns dict with status and optional feedback)
+            approval_result = await _request_plan_approval(ctx, planner_stream_output, plan_text)
+            
+            if approval_result["status"] == "approved":
+                # Plan approved, break out of loop
+                approved_plan_text = approval_result.get("plan", plan_text)
+                
+                # Save the approved (potentially modified) plan to todo.md
+                base_dir = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
+                planner_dir = os.path.join(base_dir, "agents", "planner")
+                todo_path = os.path.join(planner_dir, "todo.md")
+                os.makedirs(planner_dir, exist_ok=True)
+                
+                # Write the approved plan to todo.md so orchestrator uses the correct plan
+                with open(todo_path, "w", encoding="utf-8") as file:
+                    file.write(approved_plan_text)
+                
+                planner_stream_output.steps.append("Task planned successfully")
+                planner_stream_output.steps.append("Approved plan saved to todo.md")
+                planner_stream_output.output = approved_plan_text
+                planner_stream_output.status_code = 200
+                await _safe_websocket_send(ctx.deps.websocket, planner_stream_output)
+                
+                # Also update orchestrator stream
+                ctx.deps.stream_output.steps.append("Task planned successfully")
+                await _safe_websocket_send(ctx.deps.websocket, ctx.deps.stream_output)
+                
+                # Return with explicit instructions to use the approved plan, not the original query
+                return f"""PLAN APPROVED AND SAVED
+
+CRITICAL: The approved plan below is now your SOURCE OF TRUTH.
+IGNORE the original user query. Use ONLY the task descriptions from this approved plan.
+The user may have modified the plan - use the EXACT text from the plan below.
+
+=== APPROVED PLAN (USE THIS) ===
+{approved_plan_text}
+=== END OF APPROVED PLAN ===
+"""
+            
+            elif approval_result["status"] == "retry":
+                # User requested changes, loop back with feedback
+                retry_count += 1
+                feedback = approval_result.get("feedback", "")
+                
+                if retry_count >= MAX_PLAN_RETRIES:
+                    # Maximum retries reached, force approval or cancellation
+                    planner_stream_output.steps.append(
+                        f"Maximum plan regeneration limit ({MAX_PLAN_RETRIES}) reached. "
+                        "Please approve the current plan or cancel the task."
+                    )
+                    planner_stream_output.status_code = 102
+                    await _safe_websocket_send(ctx.deps.websocket, planner_stream_output)
+                    
+                    # Request final approval (user can only approve or cancel now)
+                    final_approval = await _request_plan_approval(ctx, planner_stream_output, plan_text)
+                    if final_approval["status"] == "approved":
+                        approved_plan_text = final_approval.get("plan", plan_text)
+                        # Save and return as normal
+                        base_dir = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
+                        planner_dir = os.path.join(base_dir, "agents", "planner")
+                        todo_path = os.path.join(planner_dir, "todo.md")
+                        os.makedirs(planner_dir, exist_ok=True)
+                        with open(todo_path, "w", encoding="utf-8") as file:
+                            file.write(approved_plan_text)
+                        planner_stream_output.steps.append("Task planned successfully")
+                        planner_stream_output.steps.append("Approved plan saved to todo.md")
+                        planner_stream_output.output = approved_plan_text
+                        planner_stream_output.status_code = 200
+                        await _safe_websocket_send(ctx.deps.websocket, planner_stream_output)
+                        ctx.deps.stream_output.steps.append("Task planned successfully")
+                        await _safe_websocket_send(ctx.deps.websocket, ctx.deps.stream_output)
+                        # Return with explicit instructions to use the approved plan
+                        return f"""PLAN APPROVED AND SAVED
+
+CRITICAL: The approved plan below is now your SOURCE OF TRUTH.
+IGNORE the original user query. Use ONLY the task descriptions from this approved plan.
+The user may have modified the plan - use the EXACT text from the plan below.
+
+=== APPROVED PLAN (USE THIS) ===
+{approved_plan_text}
+=== END OF APPROVED PLAN ===
+"""
+                    else:
+                        # Cancelled
+                        planner_stream_output.steps.append("Plan execution cancelled by user.")
+                        planner_stream_output.status_code = 400
+                        await _safe_websocket_send(ctx.deps.websocket, planner_stream_output)
+                        raise UserCancellationError("Plan execution cancelled by user.")
+                
+                planner_stream_output.steps.append(
+                    f"User requested changes ({retry_count}/{MAX_PLAN_RETRIES}). Feedback: {feedback}"
+                )
+                planner_stream_output.status_code = 102
+                await _safe_websocket_send(ctx.deps.websocket, planner_stream_output)
+                # Continue loop to regenerate plan
+                continue
+            
+            elif approval_result["status"] == "cancelled":
+                # User cancelled, raise exception
+                planner_stream_output.steps.append("Plan execution cancelled by user.")
+                planner_stream_output.status_code = 400
+                await _safe_websocket_send(ctx.deps.websocket, planner_stream_output)
+                raise UserCancellationError("Plan execution cancelled by user.")
         
-        # Run planner agent
-        planner_response = await planner_agent.run(user_prompt=task)
-        
-        # Update planner stream with results
-        plan_text = planner_response.data.plan
-        planner_stream_output.steps.append("Task planned successfully")
-        planner_stream_output.output = plan_text
-        planner_stream_output.status_code = 200
-        await _safe_websocket_send(ctx.deps.websocket, planner_stream_output)
-        
-        # Also update orchestrator stream
-        ctx.deps.stream_output.steps.append("Task planned successfully")
-        await _safe_websocket_send(ctx.deps.websocket, ctx.deps.stream_output)
-        
-        return f"Task planned successfully\nTask: {plan_text}"
+        # If we exit the loop without approval (shouldn't happen, but safety check)
+        if retry_count >= MAX_PLAN_RETRIES:
+            planner_stream_output.steps.append("Maximum retry limit reached. Plan execution terminated.")
+            planner_stream_output.status_code = 400
+            await _safe_websocket_send(ctx.deps.websocket, planner_stream_output)
+            raise RuntimeError("Maximum plan regeneration limit reached. Please try again with a clearer task description.")
+            
+    except UserCancellationError:
+        # Re-raise cancellation errors to be handled gracefully at the top level
+        raise
     except Exception as e:
         error_msg = f"Error planning task: {str(e)}"
         logfire.error(error_msg, exc_info=True)
@@ -254,6 +390,19 @@ async def coder_task(ctx: RunContext[orchestrator_deps], task: str) -> str:
             websocket=ctx.deps.websocket,
             stream_output=coder_stream_output
         )
+
+        try:
+            await _ensure_step_approval(
+                ctx,
+                channel="code",
+                task_description=task,
+                prompt="Approve this coding step before it runs."
+            )
+        except RuntimeError as rejection_error:
+            coder_stream_output.steps.append(str(rejection_error))
+            coder_stream_output.status_code = 400
+            await _safe_websocket_send(ctx.deps.websocket, coder_stream_output)
+            return str(rejection_error)
 
         # Run coder agent
         coder_response = await coder_agent.run(
@@ -306,6 +455,20 @@ async def web_surfer_task(ctx: RunContext[orchestrator_deps], task: str) -> str:
             ctx.deps.agent_responses.append(web_surfer_stream_output)
 
         await _safe_websocket_send(ctx.deps.websocket, web_surfer_stream_output)
+
+        try:
+            await _ensure_step_approval(
+                ctx,
+                channel="web",
+                task_description=task,
+                prompt="Approve this web automation step before it executes."
+            )
+        except RuntimeError as rejection_error:
+            web_surfer_stream_output.steps.append(str(rejection_error))
+            web_surfer_stream_output.status_code = 400
+            web_surfer_stream_output.output = str(rejection_error)
+            await _safe_websocket_send(ctx.deps.websocket, web_surfer_stream_output)
+            return str(rejection_error)
         
         # Initialize WebSurfer agent
         web_surfer_agent = WebSurfer(api_url="http://agentic_browser:8000/api/v1/web/stream")
@@ -484,7 +647,7 @@ async def planner_agent_update(ctx: RunContext[orchestrator_deps], completed_tas
             logfire.error(error_msg, exc_info=True)
             
             planner_stream_output.steps.append(f"Plan update failed: {str(e)}")
-            planner_stream_output.status_code = a500
+            planner_stream_output.status_code = 500
             await _safe_websocket_send(ctx.deps.websocket, planner_stream_output)
             
             return f"Failed to update the plan: {error_msg}"
@@ -499,6 +662,172 @@ async def planner_agent_update(ctx: RunContext[orchestrator_deps], completed_tas
             await _safe_websocket_send(ctx.deps.websocket, ctx.deps.stream_output)
         
         return f"Failed to update plan: {error_msg}"
+
+# Approval helpers
+async def _request_plan_approval(
+    ctx: RunContext[orchestrator_deps],
+    planner_stream_output: StreamResponse,
+    plan_text: str,
+) -> Dict[str, Any]:
+    """
+    Pause execution until the user approves, requests changes, or cancels the generated plan.
+    Returns a dict with:
+    - status: "approved" | "retry" | "cancelled"
+    - plan: updated plan text (if approved)
+    - feedback: user feedback (if retry)
+    """
+    if ctx.deps.plan_approved:
+        if ctx.deps.approved_plan_text == plan_text:
+            return {
+                "status": "approved",
+                "plan": plan_text
+            }
+        ctx.deps.plan_approved = False
+
+    if not ctx.deps.websocket:
+        ctx.deps.plan_approved = True
+        ctx.deps.approved_plan_text = plan_text
+        return {
+            "status": "approved",
+            "plan": plan_text
+        }
+
+    planner_stream_output.steps.append("Plan ready for review")
+    await _safe_websocket_send(ctx.deps.websocket, planner_stream_output)
+
+    approval_id = str(uuid.uuid4())
+    approval_stream = StreamResponse(
+        agent_name="Plan Approval",
+        instructions="Review the generated plan. You can approve it, request modifications via feedback, or cancel.",
+        steps=[],
+        output=plan_text,
+        status_code=102,
+        metadata={
+            "approval_id": approval_id,
+            "require_browser_approval": ctx.deps.require_browser_approval,
+            "require_coder_approval": ctx.deps.require_coder_approval,
+        },
+    )
+    await _safe_websocket_send(ctx.deps.websocket, approval_stream)
+
+    while True:
+        raw_response = await ctx.deps.websocket.receive_text()
+        try:
+            payload = json.loads(raw_response)
+        except json.JSONDecodeError:
+            approval_stream.steps.append("Invalid response. Please use the approval controls.")
+            await _safe_websocket_send(ctx.deps.websocket, approval_stream)
+            continue
+
+        # Handle plan feedback (request changes)
+        if payload.get("type") == "plan_feedback":
+            if payload.get("approval_id") and payload["approval_id"] != approval_id:
+                continue
+            feedback = payload.get("feedback", "").strip()
+            if not feedback:
+                approval_stream.steps.append("Please provide feedback when requesting changes.")
+                await _safe_websocket_send(ctx.deps.websocket, approval_stream)
+                continue
+            
+            approval_stream.steps.append(f"Feedback received: {feedback}")
+            approval_stream.status_code = 102
+            await _safe_websocket_send(ctx.deps.websocket, approval_stream)
+            return {
+                "status": "retry",
+                "feedback": feedback
+            }
+
+        # Handle plan approval
+        if payload.get("type") == "plan_approval":
+            if payload.get("approval_id") and payload["approval_id"] != approval_id:
+                continue
+
+            if payload.get("approved", True) is False:
+                approval_stream.steps.append("Plan rejected by user.")
+                approval_stream.status_code = 400
+                await _safe_websocket_send(ctx.deps.websocket, approval_stream)
+                return {
+                    "status": "cancelled"
+                }
+
+            # Always use the original plan_text - manual edits are not allowed
+            # Users can only approve, request modifications via feedback, or cancel
+            ctx.deps.require_browser_approval = bool(payload.get("require_browser_approval"))
+            ctx.deps.require_coder_approval = bool(payload.get("require_coder_approval"))
+            ctx.deps.plan_approved = True
+            ctx.deps.approved_plan_text = plan_text
+
+            approval_stream.steps.append("Plan approved by user.")
+            approval_stream.status_code = 200
+            approval_stream.output = plan_text
+            approval_stream.metadata = {
+                "approval_id": approval_id,
+                "require_browser_approval": ctx.deps.require_browser_approval,
+                "require_coder_approval": ctx.deps.require_coder_approval,
+            }
+            await _safe_websocket_send(ctx.deps.websocket, approval_stream)
+            return {
+                "status": "approved",
+                "plan": plan_text
+            }
+
+        # Ignore other message types
+        approval_stream.steps.append("Waiting for plan approval response...")
+        await _safe_websocket_send(ctx.deps.websocket, approval_stream)
+
+
+async def _ensure_step_approval(
+    ctx: RunContext[orchestrator_deps],
+    *,
+    channel: str,
+    task_description: str,
+    prompt: str,
+) -> None:
+    """Request user approval before executing a sensitive step."""
+    requires_approval = (
+        ctx.deps.require_browser_approval if channel == "web" else ctx.deps.require_coder_approval
+    )
+    if not requires_approval or not ctx.deps.websocket:
+        return
+
+    approval_id = str(uuid.uuid4())
+    approval_stream = StreamResponse(
+        agent_name="Step Approval",
+        instructions=prompt,
+        steps=[],
+        status_code=102,
+        output=task_description,
+        metadata={"approval_id": approval_id, "channel": channel},
+    )
+    await _safe_websocket_send(ctx.deps.websocket, approval_stream)
+
+    while True:
+        raw_response = await ctx.deps.websocket.receive_text()
+        try:
+            payload = json.loads(raw_response)
+        except json.JSONDecodeError:
+            continue
+
+        if payload.get("type") != "step_approval":
+            continue
+
+        if payload.get("approval_id") and payload["approval_id"] != approval_id:
+            continue
+
+        if payload.get("approved", True):
+            approval_stream.steps.append("Step approved by user.")
+            approval_stream.status_code = 200
+            await _safe_websocket_send(ctx.deps.websocket, approval_stream)
+            return
+
+        reason = (payload.get("reason") or "").strip()
+        approval_stream.steps.append("Step rejected by user.")
+        if reason:
+            approval_stream.output = f"{task_description}\n\nUser note: {reason}"
+        approval_stream.status_code = 400
+        await _safe_websocket_send(ctx.deps.websocket, approval_stream)
+        raise RuntimeError(f"User rejected {channel} step{': ' + reason if reason else ''}")
+
 
 # Helper function for sending WebSocket messages
 async def _safe_websocket_send(websocket: Optional[WebSocket], message: Any) -> bool:
