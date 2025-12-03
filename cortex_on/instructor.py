@@ -17,7 +17,7 @@ from pydantic_ai.models.anthropic import AnthropicModel
 
 # Local application imports
 from agents.code_agent import coder_agent
-from agents.orchestrator_agent import orchestrator_agent, orchestrator_deps
+from agents.orchestrator_agent import orchestrator_agent, orchestrator_deps, UserCancellationError
 from agents.planner_agent import planner_agent
 from agents.web_surfer import WebSurfer
 from utils.ant_client import get_client
@@ -99,6 +99,19 @@ class SystemInstructor:
             await self._safe_websocket_send(stream_output)
 
             logfire.info("Task completed successfully")
+            return [json.loads(json.dumps(asdict(i), cls=DateTimeEncoder)) for i in self.orchestrator_response]
+        
+        except UserCancellationError:
+            # User-initiated cancellation - show friendly message
+            friendly_msg = "Task cancelled by user. No changes were made."
+            logfire.info(friendly_msg)
+            
+            if stream_output:
+                stream_output.output = friendly_msg
+                stream_output.status_code = 200  # Use 200 to indicate successful cancellation
+                stream_output.steps.append("Task cancelled successfully")
+                await self._safe_websocket_send(stream_output)
+            
             return [json.loads(json.dumps(asdict(i), cls=DateTimeEncoder)) for i in self.orchestrator_response]
         
         except Exception as e:

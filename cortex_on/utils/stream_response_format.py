@@ -9,3 +9,4 @@ class StreamResponse:
     status_code: int
     output: str
     live_url: Optional[str] = None
+    metadata: Optional[dict] = None

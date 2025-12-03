@@ -15,6 +15,7 @@ export interface SystemMessage {
   output: string;
   status_code: number;
   live_url: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface Message {
