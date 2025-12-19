@@ -6,9 +6,13 @@ from fastapi import FastAPI, WebSocket
 
 # Local application imports
 from instructor import SystemInstructor
+from tracing import TracingMiddleware
 
 
 app: FastAPI = FastAPI()
+
+# Add tracing middleware
+app.add_middleware(TracingMiddleware)
 
 async def generate_response(task: str, websocket: Optional[WebSocket] = None):
     orchestrator: SystemInstructor = SystemInstructor()

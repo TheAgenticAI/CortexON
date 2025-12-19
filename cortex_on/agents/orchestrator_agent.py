@@ -15,6 +15,7 @@ from utils.stream_response_format import StreamResponse
 from agents.planner_agent import planner_agent, update_todo_status
 from agents.code_agent import coder_agent, CoderAgentDeps
 from utils.ant_client import get_client
+from tracing import trace_agent_tool, log as trace_log
 
 @dataclass
 class orchestrator_deps:
@@ -171,10 +172,12 @@ orchestrator_agent = Agent(
 )
 
 @orchestrator_agent.tool
+@trace_agent_tool(agent_name="Orchestrator", tool_name="plan_task")
 async def plan_task(ctx: RunContext[orchestrator_deps], task: str) -> str:
     """Plans the task and assigns it to the appropriate agents"""
     try:
         logfire.info(f"Planning task: {task}")
+        trace_log.info("Planning task", task=task)
         
         # Create a new StreamResponse for Planner Agent
         planner_stream_output = StreamResponse(
@@ -228,10 +231,12 @@ async def plan_task(ctx: RunContext[orchestrator_deps], task: str) -> str:
         return f"Failed to plan task: {error_msg}"
 
 @orchestrator_agent.tool
+@trace_agent_tool(agent_name="Orchestrator", tool_name="coder_task")
 async def coder_task(ctx: RunContext[orchestrator_deps], task: str) -> str:
     """Assigns coding tasks to the coder agent"""
     try:
         logfire.info(f"Assigning coding task: {task}")
+        trace_log.info("Assigning coding task", task=task)
 
         # Create a new StreamResponse for Coder Agent
         coder_stream_output = StreamResponse(
@@ -286,6 +291,7 @@ async def coder_task(ctx: RunContext[orchestrator_deps], task: str) -> str:
         return f"Failed to assign coding task: {error_msg}"
 
 @orchestrator_agent.tool
+@trace_agent_tool(agent_name="Orchestrator", tool_name="web_surfer_task")
 async def web_surfer_task(ctx: RunContext[orchestrator_deps], task: str) -> str:
     """Assigns web surfing tasks to the web surfer agent"""
     try:
@@ -347,6 +353,7 @@ async def web_surfer_task(ctx: RunContext[orchestrator_deps], task: str) -> str:
         return f"Failed to assign web surfing task: {error_msg}"
 
 @orchestrator_agent.tool
+@trace_agent_tool(agent_name="Orchestrator", tool_name="ask_human")
 async def ask_human(ctx: RunContext[orchestrator_deps], question: str) -> str:
     """Sends a question to the frontend and waits for human input"""
     try:
@@ -394,6 +401,7 @@ async def ask_human(ctx: RunContext[orchestrator_deps], question: str) -> str:
         return f"Failed to get human input: {error_msg}"
 
 @orchestrator_agent.tool
+@trace_agent_tool(agent_name="Orchestrator", tool_name="planner_agent_update")
 async def planner_agent_update(ctx: RunContext[orchestrator_deps], completed_task: str) -> str:
     """
     Updates the todo.md file to mark a task as completed and returns the full updated plan.
@@ -484,7 +492,7 @@ async def planner_agent_update(ctx: RunContext[orchestrator_deps], completed_tas
             logfire.error(error_msg, exc_info=True)
             
             planner_stream_output.steps.append(f"Plan update failed: {str(e)}")
-            planner_stream_output.status_code = a500
+            planner_stream_output.status_code = 500
             await _safe_websocket_send(ctx.deps.websocket, planner_stream_output)
             
             return f"Failed to update the plan: {error_msg}"
