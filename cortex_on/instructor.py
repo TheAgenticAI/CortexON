@@ -22,6 +22,7 @@ from agents.planner_agent import planner_agent
 from agents.web_surfer import WebSurfer
 from utils.ant_client import get_client
 from utils.stream_response_format import StreamResponse
+from tracing import start_step, end_step, log as trace_log
 
 load_dotenv()
 
@@ -67,6 +68,11 @@ class SystemInstructor:
     async def run(self, task: str, websocket: WebSocket) -> List[Dict[str, Any]]:
         """Main orchestration loop with comprehensive error handling"""
         self.websocket = websocket
+        
+        # Start orchestration step
+        start_step("SystemInstructor", "orchestrate")
+        trace_log.info("Starting orchestration", task=task)
+        
         stream_output = StreamResponse(
             agent_name="Orchestrator",
             instructions=task,
@@ -99,11 +105,15 @@ class SystemInstructor:
             await self._safe_websocket_send(stream_output)
 
             logfire.info("Task completed successfully")
+            trace_log.info("Orchestration completed successfully")
+            end_step("success")
             return [json.loads(json.dumps(asdict(i), cls=DateTimeEncoder)) for i in self.orchestrator_response]
         
         except Exception as e:
             error_msg = f"Critical orchestration error: {str(e)}\n{traceback.format_exc()}"
             logfire.error(error_msg)
+            trace_log.error("Orchestration failed", error=str(e), error_type=type(e).__name__)
+            end_step("error", e)
             
             if stream_output:
                 stream_output.output = error_msg
